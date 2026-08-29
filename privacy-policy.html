@@ -1,0 +1,64 @@
+<!DOCTYPE html>
+<html lang="zh-Hant">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>隱私權政策 — [B.M] 自動簽到</title>
+  <style>
+    body { font-family: system-ui, sans-serif; line-height: 1.6; max-width: 42rem; margin: 2rem auto; padding: 0 1rem; color: #222; }
+    h1 { font-size: 1.35rem; }
+    h2 { font-size: 1.05rem; margin-top: 1.5rem; }
+    p, li { font-size: 0.95rem; }
+    ul { padding-left: 1.25rem; }
+  </style>
+</head>
+<body>
+  <h1>隱私權政策</h1>
+  <p><strong>擴充功能名稱：</strong>[B.M] 自動簽到（以下稱「本擴充功能」）。</p>
+  <p>本政策說明本擴充功能如何處理與您相關的資訊。使用本擴充功能即表示您同意本政策內容。</p>
+
+  <h2>一、資料收集</h2>
+  <p>本擴充功能<strong>不會</strong>向開發者蒐集、上傳或出售任何可識別個人身分的資料（例如帳號、密碼、電子郵件、Cookie 內容或瀏覽紀錄）。本擴充功能<strong>沒有</strong>開發者自有的後端伺服器。</p>
+  <p>本擴充功能未使用分析（Analytics）、廣告追蹤或遠端程式碼；所有程式皆隨擴充功能套件封裝。</p>
+  <p>本擴充功能<strong>不會</strong>儲存或讀取您的網站密碼。簽到係在您裝置上、使用您瀏覽器中既有的登入工作階段完成；請您事先在 Chrome 手動登入各支援網站。</p>
+
+  <h2>二、本機儲存</h2>
+  <p>本擴充功能使用瀏覽器的 <strong>storage</strong> 權限，僅在您的裝置上保存下列資訊，供擴充功能本身讀取：</p>
+  <ul>
+    <li>每日簽到時間與各網站的啟用開關。</li>
+    <li>各網站最近一次簽到結果（成功、尚未登入、需要驗證碼、逾時或失敗）及時間。</li>
+    <li>簽到進行中的暫存狀態（例如目前開啟的分頁）。</li>
+  </ul>
+  <p>無痕視窗的簽到紀錄與一般視窗分開存放，不會互相覆蓋。上述設定<strong>不會</strong>傳送至開發者伺服器。</p>
+
+  <h2>三、運作方式與權限範圍</h2>
+  <p>本擴充功能的單一目的是：依您指定的時間（或手動「立即簽到」），在您已登入的支援網站上完成每日簽到，成功後關閉分頁。</p>
+  <p>目前支援的網站為：</p>
+  <ul>
+    <li>巴哈姆特（gamer.com.tw）小屋簽到頁</li>
+    <li>APK.TW（apk.tw）</li>
+    <li>原神 HoYoLAB 簽到活動頁（act.hoyolab.com）</li>
+  </ul>
+  <p>為達成上述功能，本擴充功能會：</p>
+  <ul>
+    <li>使用 <strong>alarms</strong> 在您設定的本地時間排程簽到，並處理逾時與工具列徽章清除。</li>
+    <li>使用 <strong>tabs</strong> 開啟、聚焦或關閉簽到分頁；若偵測到導向登入頁，會保留分頁並提示您手動登入。</li>
+    <li>使用 <strong>scripting</strong> 與內容腳本，在上述網站分頁內呼叫該站既有的簽到介面或官方活動 API（僅在您裝置上的該分頁內執行）。</li>
+    <li>使用 <strong>notifications</strong> 在本機顯示簽到結果（例如成功、需要驗證碼或尚未登入）。</li>
+    <li>使用 <strong>host_permissions</strong> 僅存取上列支援網站及其簽到相關網域，以便載入頁面並完成簽到。</li>
+  </ul>
+  <p>若簽到需要驗證碼、尚未登入或發生錯誤，分頁會保留供您手動處理；本擴充功能<strong>不會</strong>因此將頁面內容回傳給開發者。</p>
+
+  <h2>四、第三方服務</h2>
+  <p>您使用巴哈姆特、APK.TW、HoYoLAB／HoYoverse 等網站時，該等網站可能依其自有隱私權政策與服務條款處理資料（包含其既有 Cookie 與登入工作階段）。該部分與本擴充功能無涉，請參閱各網站之說明。</p>
+  <p>本擴充功能為第三方輔助工具，與上述網站官方無關。</p>
+
+  <h2>五、政策變更</h2>
+  <p>若本擴充功能之資料處理方式有重大變更，將於本頁面更新；建議您不定期查閱本政策。</p>
+
+  <h2>六、聯絡方式</h2>
+  <p>若您對本政策有疑問，請透過 <strong>Chrome 線上應用程式商店</strong> 上本擴充功能頁面所提供之開發者聯絡方式，或 GitHub 專案 Issues 與維護者聯繫。</p>
+
+  <p style="margin-top:2rem;color:#666;font-size:0.85rem;">最後更新日期：2026-08-29</p>
+</body>
+</html>

@@ -4,6 +4,7 @@
   "version": "0.1.0",
   "default_locale": "zh_TW",
   "description": "__MSG_extDescription__",
+  "homepage_url": "https://github.com/BoringMan314/bm-auto-signin",
   "permissions": [
     "alarms",
     "storage",
