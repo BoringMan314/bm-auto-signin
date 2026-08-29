@@ -13,7 +13,6 @@
   "computing": { "message": "Calculating…" },
   "noRecord": { "message": "No record yet" },
   "hint": { "message": "Sign in to each site in Chrome first, and keep the browser open or allow background running at the scheduled time." },
-  "incognitoHint": { "message": "Incognito sign-in results are stored separately and will not overwrite your normal window." },
   "pageLoginHint": { "message": "Please log in manually" },
   "popupLoginDetail": { "message": "Please log in manually." },
   "pageLoginDialogSrc": {

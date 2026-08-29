@@ -13,7 +13,6 @@
   "computing": { "message": "計算中…" },
   "noRecord": { "message": "記録なし" },
   "hint": { "message": "先に Chrome で各サイトにログインし、予定時刻にはブラウザを開いたままにするか、バックグラウンド実行を許可してください。" },
-  "incognitoHint": { "message": "シークレットのサインイン結果は通常ウィンドウとは別に保存され、上書きしません。" },
   "pageLoginHint": { "message": "手動でログインしてください" },
   "popupLoginDetail": { "message": "先に手動でログインしてください。" },
   "pageLoginDialogSrc": {

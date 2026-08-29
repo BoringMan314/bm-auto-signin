@@ -53,8 +53,6 @@ async function popupContext() {
 
 async function init() {
   const ctx = await popupContext();
-  const hint = document.getElementById("incognitoHint");
-  if (hint) hint.hidden = !ctx.incognito;
   const reply = await chrome.runtime.sendMessage({
     type: "getSettings",
     ...ctx

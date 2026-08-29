@@ -166,10 +166,6 @@ small {
   color: var(--muted);
 }
 
-.incognito-hint {
-  color: #fbbf24;
-}
-
 footer {
   display: flex;
   gap: 8px;

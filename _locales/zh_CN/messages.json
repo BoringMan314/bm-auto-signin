@@ -13,7 +13,6 @@
   "computing": { "message": "计算中…" },
   "noRecord": { "message": "尚无记录" },
   "hint": { "message": "请先在 Chrome 登录各网站，并在预定时间保持浏览器开启或允许后台运行。" },
-  "incognitoHint": { "message": "无痕模式的签到记录与普通窗口分开，不会互相覆盖。" },
   "pageLoginHint": { "message": "请手动登录" },
   "popupLoginDetail": { "message": "请先手动登录。" },
   "pageLoginDialogSrc": {

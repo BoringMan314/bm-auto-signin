@@ -12,8 +12,7 @@
   "lastResultLabel": { "message": "上次結果" },
   "computing": { "message": "計算中…" },
   "noRecord": { "message": "尚無紀錄" },
-  "hint": { "message": "請先在 Chrome 登入各網站，並在排定時間保持瀏覽器開啟或允許背景執行。巴哈會開小屋頁，不開有廣告轉址的首頁。" },
-  "incognitoHint": { "message": "無痕模式的簽到紀錄與一般視窗分開，不會互相覆蓋。" },
+  "hint": { "message": "請先在 Chrome 登入各網站，並在排定時間保持瀏覽器開啟或允許背景執行。" },
   "pageLoginHint": { "message": "請手動登入" },
   "popupLoginDetail": { "message": "請先手動登入。" },
   "pageLoginDialogSrc": {

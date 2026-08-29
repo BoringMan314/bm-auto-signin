@@ -41,12 +41,11 @@
 
 - **每日簽到時間**：未填寫時預設 **00:01**（以電腦本地時間為準）。請在排定時間保持瀏覽器開啟，或允許擴充功能背景執行。
 - **各站獨立開關**（預設皆啟用）：
-  - **巴哈**：開啟 [小屋首頁](https://home.gamer.com.tw/homeindex.php) 簽到（不開有廣告轉址的首頁）。
+  - **巴哈**：開啟 [小屋首頁](https://home.gamer.com.tw/homeindex.php) 簽到。
   - **APK.TW**：開啟 [apk.tw](https://apk.tw/) 簽到。
   - **原神**：開啟 [HoYoLAB 原神簽到活動頁](https://act.hoyolab.com/ys/event/signin-sea-v3/index.html?act_id=e202102251931481)。
 - **立即簽到**：不必等到排程，立刻依啟用中的網站依序簽到。
 - **成功後關分頁**；若**尚未登入**、**需要驗證碼**、**逾時或失敗**，會**保留分頁**並以通知／頁面提示告知。
-- 無痕模式的簽到紀錄與一般視窗分開，不會互相覆蓋。
 
 若目標網站改版簽到介面或 API，可能需調整對應的內容腳本或 [`background.js`](background.js) 中的選取／呼叫邏輯。
 
@@ -88,7 +87,7 @@
 - **彈出視窗** [`popup.html`](popup.html) / [`popup.js`](popup.js) / [`popup.css`](popup.css)：時間、各站開關、下次鬧鐘、上次結果、立即簽到。
 - **內容腳本**：[`content.js`](content.js)（APK.TW）、[`content-baha.js`](content-baha.js)、[`content-genshin.js`](content-genshin.js) 在對應網址偵測狀態並回報背景。
 - **頁面提示** [`overlay.js`](overlay.js) / [`overlay.css`](overlay.css)：尚未登入時在頁面上顯示提示。
-- **設定儲存**：`chrome.storage.local`（與無痕範圍分開）。
+- **設定儲存**：`chrome.storage.local`。
 
 ---
 
@@ -172,7 +171,7 @@ git push origin main
 3. 按「儲存設定」。排定時間請保持瀏覽器開啟或允許背景執行。
 4. 也可按「立即簽到」立刻執行。
 
-若尚未登入、需要驗證碼或簽到失敗，分頁會保留並通知您手動處理。無痕視窗的紀錄與一般視窗分開。
+若尚未登入、需要驗證碼或簽到失敗，分頁會保留並通知您手動處理。
 
 本擴充為第三方輔助工具，與各網站官方無關。請遵守各站服務條款。本擴充不蒐集、不上傳帳號密碼。
 ```

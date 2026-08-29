@@ -1,12 +1,13 @@
 const ALARM_NAME = "apk-tw-daily-signin";
+const ALARM_INCOGNITO = "apk-tw-daily-signin-incognito";
 const TIMEOUT_ALARM = "apk-tw-signin-timeout";
 const CLEAR_BADGE_ALARM = "apk-tw-clear-badge";
 const SIGN_URL = "https://apk.tw/";
 const DEFAULT_TIME = "00:01";
 const SIGN_TIMEOUT_MS = 90000;
-const BADGE_CLEAR_MS = 10000;
 const SITE_ORDER = ["baha", "apktw", "genshin"];
 const SITES_INCOGNITO_KEY = "sitesIncognito";
+const INCOGNITO_SETTINGS_KEY = "incognitoSettings";
 const SITES = {
   baha: {
     url: "https://home.gamer.com.tw/homeindex.php",
@@ -50,6 +51,7 @@ const DEFAULT_SETTINGS = {
 };
 
 let signingLock = false;
+const pendingSignIns = [];
 
 function t(key, substitutions) {
   return chrome.i18n.getMessage(key, substitutions) || key;
@@ -58,18 +60,23 @@ function t(key, substitutions) {
 chrome.runtime.onInstalled.addListener(async () => {
   await ensureDefaults();
   await scheduleAlarm();
-  await maybeClearBadge();
+  await syncLoginBadge();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
   await scheduleAlarm();
-  await maybeClearBadge();
+  await syncLoginBadge();
   await maybeCatchUp();
 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === ALARM_NAME) {
-    await startSignIn({ reason: "alarm" });
+    await startSignIn({ reason: "alarm", incognito: false });
+    await scheduleAlarm();
+    return;
+  }
+  if (alarm.name === ALARM_INCOGNITO) {
+    await startSignIn({ reason: "alarm", incognito: true });
     await scheduleAlarm();
     return;
   }
@@ -78,7 +85,7 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     return;
   }
   if (alarm.name === CLEAR_BADGE_ALARM) {
-    await clearBadge();
+    await syncLoginBadge();
   }
 });
 
@@ -99,7 +106,7 @@ chrome.tabs.onRemoved.addListener(async (tabId) => {
     await openNextSite();
     return;
   }
-  signingLock = false;
+  await finishSigningLock();
 });
 
 chrome.tabs.onCreated.addListener(async (tab) => {
@@ -126,14 +133,18 @@ chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
   );
 });
 
+chrome.tabs.onCreated.addListener((tab) => {
+  applyLoginBadgeToTab(tab).catch(() => {});
+});
+
 async function handleMessage(message, sender) {
   switch (message?.type) {
     case "getSettings":
-      await maybeClearBadge();
+      await syncLoginBadge();
       return {
         ok: true,
         settings: await getSettings({ incognito: isIncognitoMessage(message, sender) }),
-        nextAlarm: await getNextAlarmInfo()
+        nextAlarm: await getNextAlarmInfo({ incognito: isIncognitoMessage(message, sender) })
       };
     case "saveSettings":
       return saveSettings(message.payload || {}, {
@@ -199,34 +210,76 @@ function resultSnapshot(site) {
   };
 }
 
-function overlayIncognitoResults(sites, incognitoRaw) {
-  const incognitoSites = mergeSites({ sites: incognitoRaw || {} });
-  const overlayed = {};
+function persistableSites(sites) {
+  const scoped = {};
   for (const id of SITE_ORDER) {
-    overlayed[id] = {
-      ...sites[id],
-      ...resultSnapshot(incognitoSites[id])
+    scoped[id] = {
+      enabled: sites[id].enabled !== false,
+      ...resultSnapshot(sites[id])
     };
   }
-  return overlayed;
+  return scoped;
+}
+
+function readIncognitoFromStored(stored, normal) {
+  const raw = stored[INCOGNITO_SETTINGS_KEY];
+  const legacy = stored[SITES_INCOGNITO_KEY];
+  const hasRaw = Boolean(raw && (raw.signTime || raw.sites));
+  const hasLegacy = Boolean(legacy);
+
+  if (!hasRaw && !hasLegacy) {
+    const sites = {};
+    for (const id of SITE_ORDER) {
+      sites[id] = {
+        ...emptySiteState(),
+        enabled: normal.sites[id].enabled !== false
+      };
+    }
+    return { signTime: normal.signTime, sites };
+  }
+
+  const sites = mergeSites({ sites: (hasRaw ? raw.sites : legacy) || {} });
+  if (!hasRaw && hasLegacy) {
+    for (const id of SITE_ORDER) {
+      sites[id].enabled = normal.sites[id].enabled !== false;
+    }
+  }
+  if (hasRaw && legacy) {
+    for (const id of SITE_ORDER) {
+      if (!sites[id].lastResult && legacy[id]?.lastResult) {
+        Object.assign(sites[id], resultSnapshot(legacy[id]));
+      }
+    }
+  }
+  return {
+    signTime: normalizeTime((hasRaw && raw.signTime) || normal.signTime),
+    sites
+  };
 }
 
 async function getSettings({ incognito = false } = {}) {
   const stored = await chrome.storage.local.get([
     ...Object.keys(DEFAULT_SETTINGS),
     "sites",
-    SITES_INCOGNITO_KEY
+    SITES_INCOGNITO_KEY,
+    INCOGNITO_SETTINGS_KEY
   ]);
-  let sites = mergeSites(stored);
-  if (incognito) {
-    sites = overlayIncognitoResults(sites, stored[SITES_INCOGNITO_KEY]);
-  }
-  return {
+  const normalSites = mergeSites(stored);
+  const normal = {
     ...DEFAULT_SETTINGS,
     ...stored,
     signTime: normalizeTime(stored.signTime),
-    enabled: SITE_ORDER.some((id) => sites[id].enabled),
-    sites
+    sites: normalSites,
+    enabled: SITE_ORDER.some((id) => normalSites[id].enabled)
+  };
+  if (!incognito) return normal;
+
+  const incog = readIncognitoFromStored(stored, normal);
+  return {
+    ...DEFAULT_SETTINGS,
+    signTime: incog.signTime,
+    sites: incog.sites,
+    enabled: SITE_ORDER.some((id) => incog.sites[id].enabled)
   };
 }
 
@@ -248,26 +301,47 @@ function mergeSites(stored) {
   return sites;
 }
 
+function resetSignJudgment(site) {
+  return {
+    ...site,
+    lastSignDate: "",
+    lastResult: "",
+    lastResultAt: "",
+    lastMessage: ""
+  };
+}
+
 async function saveSettings(payload, { incognito = false } = {}) {
   const signTime = normalizeTime(payload.signTime);
-  const current = await getSettings();
+  const current = await getSettings({ incognito });
   const sites = mergeSites({ sites: current.sites });
   if (payload.sites) {
     for (const id of SITE_ORDER) {
       if (payload.sites[id] && typeof payload.sites[id].enabled === "boolean") {
         sites[id].enabled = payload.sites[id].enabled;
+        if (!sites[id].enabled) sites[id] = resetSignJudgment(sites[id]);
       }
     }
   } else if (typeof payload.enabled === "boolean") {
-    for (const id of SITE_ORDER) sites[id].enabled = payload.enabled;
+    for (const id of SITE_ORDER) {
+      sites[id].enabled = payload.enabled;
+      if (!sites[id].enabled) sites[id] = resetSignJudgment(sites[id]);
+    }
   }
   const enabled = SITE_ORDER.some((id) => sites[id].enabled);
-  await chrome.storage.local.set({ signTime, enabled, sites });
+  if (incognito) {
+    await chrome.storage.local.set({
+      [INCOGNITO_SETTINGS_KEY]: { signTime, sites: persistableSites(sites) }
+    });
+  } else {
+    await chrome.storage.local.set({ signTime, enabled, sites });
+  }
   await scheduleAlarm();
+  await syncLoginBadge();
   return {
     ok: true,
     settings: await getSettings({ incognito }),
-    nextAlarm: await getNextAlarmInfo()
+    nextAlarm: await getNextAlarmInfo({ incognito })
   };
 }
 
@@ -281,14 +355,19 @@ function normalizeTime(value) {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
-async function scheduleAlarm() {
-  const settings = await getSettings();
-  await chrome.alarms.clear(ALARM_NAME);
+async function scheduleProfileAlarm(incognito) {
+  const name = incognito ? ALARM_INCOGNITO : ALARM_NAME;
+  const settings = await getSettings({ incognito });
+  await chrome.alarms.clear(name);
   if (!SITE_ORDER.some((id) => settings.sites[id].enabled)) return null;
-
   const when = getNextAlarmTimestamp(settings.signTime);
-  await chrome.alarms.create(ALARM_NAME, { when });
+  await chrome.alarms.create(name, { when });
   return when;
+}
+
+async function scheduleAlarm() {
+  await scheduleProfileAlarm(false);
+  await scheduleProfileAlarm(true);
 }
 
 function getNextAlarmTimestamp(signTime) {
@@ -309,8 +388,8 @@ function getNextAlarmTimestamp(signTime) {
   return next.getTime();
 }
 
-async function getNextAlarmInfo() {
-  const alarm = await chrome.alarms.get(ALARM_NAME);
+async function getNextAlarmInfo({ incognito = false } = {}) {
+  const alarm = await chrome.alarms.get(incognito ? ALARM_INCOGNITO : ALARM_NAME);
   return alarm?.scheduledTime || null;
 }
 
@@ -322,10 +401,8 @@ function todayKey() {
   return `${year}-${month}-${day}`;
 }
 
-async function maybeCatchUp() {
-  const existing = await getSignState();
-  if (existing.active) return;
-  const settings = await getSettings();
+async function maybeCatchUpProfile(incognito) {
+  const settings = await getSettings({ incognito });
   const due = SITE_ORDER.filter(
     (id) => settings.sites[id].enabled && settings.sites[id].lastSignDate !== todayKey()
   );
@@ -343,8 +420,13 @@ async function maybeCatchUp() {
     0
   );
   if (now.getTime() >= scheduled.getTime()) {
-    await startSignIn({ reason: "catch-up" });
+    await startSignIn({ reason: "catch-up", incognito });
   }
+}
+
+async function maybeCatchUp() {
+  await maybeCatchUpProfile(false);
+  await maybeCatchUpProfile(true);
 }
 
 async function getSignState() {
@@ -546,15 +628,20 @@ async function focusExistingSignTab() {
   return false;
 }
 
-async function getNormalWindowId() {
+async function getProfileWindowId(incognito) {
   try {
     const windows = await chrome.windows.getAll({ windowTypes: ["normal"] });
-    const normal = windows.find((item) => !item.incognito && item.focused)
-      || windows.find((item) => !item.incognito);
-    return normal?.id || null;
+    const match = windows.filter((item) => Boolean(item.incognito) === Boolean(incognito));
+    return (match.find((item) => item.focused) || match[0])?.id || null;
   } catch (_) {
     return null;
   }
+}
+
+async function finishSigningLock() {
+  signingLock = false;
+  const next = pendingSignIns.shift();
+  if (next) await startSignIn(next);
 }
 
 async function startSignIn({
@@ -564,7 +651,14 @@ async function startSignIn({
   windowId = null
 } = {}) {
   if (signingLock) {
-    await focusExistingSignTab();
+    const state = await getSignState();
+    if (Boolean(state.incognito) === Boolean(incognito)) {
+      await focusExistingSignTab();
+      return true;
+    }
+    if (!pendingSignIns.some((item) => Boolean(item.incognito) === Boolean(incognito))) {
+      pendingSignIns.push({ reason, force, incognito, windowId });
+    }
     return true;
   }
   signingLock = true;
@@ -576,14 +670,14 @@ async function startSignIn({
       queue = queue.filter((id) => settings.sites[id].lastSignDate !== todayKey());
     }
     if (!queue.length) {
-      signingLock = false;
+      await finishSigningLock();
       return false;
     }
 
-    if (!incognito && !windowId) {
-      windowId = await getNormalWindowId();
+    if (!windowId) {
+      windowId = await getProfileWindowId(incognito);
       if (!windowId && reason !== "manual") {
-        signingLock = false;
+        await finishSigningLock();
         return false;
       }
     }
@@ -608,7 +702,6 @@ async function startSignIn({
     }
 
     if (!incognito) {
-      await clearBadge();
       await setActionTooltip(null);
     }
     await setSignState({
@@ -625,7 +718,6 @@ async function startSignIn({
     await openNextSite();
     return true;
   } catch (error) {
-    signingLock = false;
     await setSignState({
       active: false,
       signTabId: null,
@@ -636,10 +728,11 @@ async function startSignIn({
     });
     await recordSiteResult(null, "error", t("msgOpenTabFailed", [String(error.message || error)]), false);
     if (!incognito) {
-      await setBadge("!", "#dc2626", { sticky: true });
       await setActionTooltip("resultError", t("notifyOpenTabFailed"));
     }
+    await syncLoginBadge();
     await notify("resultError", "notifyOpenTabFailed", "", { sticky: true });
+    await finishSigningLock();
     throw error;
   }
 }
@@ -648,7 +741,6 @@ async function openNextSite() {
   const state = await getSignState();
   const siteId = state.queue?.[0];
   if (!siteId) {
-    signingLock = false;
     await applyQueueBadge(state.results || [], state.incognito);
     await setSignState({
       ...state,
@@ -658,6 +750,7 @@ async function openNextSite() {
       queue: [],
       results: state.results || []
     });
+    await finishSigningLock();
     return;
   }
 
@@ -815,6 +908,7 @@ async function onSignResult(payload, tabId) {
   const siteLabel = t(SITES[siteId]?.nameKey || "siteApkTw");
   const markToday = status === "success";
   await recordSiteResult(siteId, status, message, markToday);
+  await syncLoginBadge();
 
   if (status === "success") {
     await notify("resultSuccess", "notifySuccessBody", `${siteLabel}｜${message}`);
@@ -919,14 +1013,15 @@ async function recordSiteResult(siteId, status, message, markToday) {
   const { incognito } = await getSignState();
   if (incognito) {
     if (!siteId) return;
-    const stored = await chrome.storage.local.get(SITES_INCOGNITO_KEY);
-    const sites = mergeSites({ sites: stored[SITES_INCOGNITO_KEY] || {} });
+    const settings = await getSettings({ incognito: true });
+    const sites = mergeSites({ sites: settings.sites });
     sites[siteId] = { ...sites[siteId], ...patch };
-    const scoped = {};
-    for (const id of SITE_ORDER) {
-      scoped[id] = resultSnapshot(sites[id]);
-    }
-    await chrome.storage.local.set({ [SITES_INCOGNITO_KEY]: scoped });
+    await chrome.storage.local.set({
+      [INCOGNITO_SETTINGS_KEY]: {
+        signTime: settings.signTime,
+        sites: persistableSites(sites)
+      }
+    });
     return;
   }
   if (!siteId) {
@@ -939,66 +1034,76 @@ async function recordSiteResult(siteId, status, message, markToday) {
   await chrome.storage.local.set({ sites });
 }
 
-async function applyQueueBadge(results, incognito = false) {
+async function applyQueueBadge(results, _incognito = false) {
   const list = results || [];
-  if (incognito) {
-    for (const item of list) {
-      if (item.status === "login" && item.tabId) {
-        await showLoginHudOnTab(item.tabId);
-      }
-    }
-    return;
-  }
-  const fail = list.find((item) => ["login", "error", "timeout", "captcha"].includes(item.status));
-  if (!fail) {
-    await clearBadge();
-    return;
-  }
-  const color = fail.status === "timeout" || fail.status === "captcha" ? "#d97706" : "#dc2626";
-  await setBadge("!", color, { sticky: true });
   for (const item of list) {
     if (item.status === "login" && item.tabId) {
       await showLoginHudOnTab(item.tabId);
     }
   }
+  await syncLoginBadge();
 }
 
-async function setBadge(text, color, { sticky = false } = {}) {
-  await chrome.action.setBadgeText({ text: text || "" });
-  if (color) {
-    await chrome.action.setBadgeBackgroundColor({ color });
+function siteHasLoginFailure(settings) {
+  return SITE_ORDER.some(
+    (id) => settings.sites[id]?.enabled !== false && settings.sites[id]?.lastResult === "login"
+  );
+}
+
+async function loginFailureFlags() {
+  return {
+    normal: siteHasLoginFailure(await getSettings()),
+    incognito: siteHasLoginFailure(await getSettings({ incognito: true }))
+  };
+}
+
+async function setTabLoginBadge(tabId, show) {
+  try {
+    if (show) {
+      await chrome.action.setBadgeBackgroundColor({ color: "#dc2626", tabId });
+      if (chrome.action.setBadgeTextColor) {
+        await chrome.action.setBadgeTextColor({ color: "#ffffff", tabId });
+      }
+      await chrome.action.setBadgeText({ text: "!", tabId });
+      return;
+    }
+    await chrome.action.setBadgeText({ text: "", tabId });
+  } catch (_) {
+    /* tab may already be gone */
   }
-  await chrome.alarms.clear(CLEAR_BADGE_ALARM);
-  if (!text) {
-    await chrome.storage.local.set({ badgeUntil: 0, badgeSticky: false });
+}
+
+async function applyLoginBadgeToTab(tab) {
+  if (tab?.id == null) return;
+  const flags = await loginFailureFlags();
+  await setTabLoginBadge(tab.id, tab.incognito ? flags.incognito : flags.normal);
+}
+
+async function syncLoginBadge() {
+  const flags = await loginFailureFlags();
+  try {
+    await chrome.action.setBadgeText({ text: "" });
+  } catch (_) {
+    /* ignore */
+  }
+  let tabs = [];
+  try {
+    tabs = await chrome.tabs.query({});
+  } catch (_) {
     return;
   }
-  if (sticky) {
-    await chrome.storage.local.set({ badgeUntil: 0, badgeSticky: true });
-    return;
-  }
-  const badgeUntil = Date.now() + BADGE_CLEAR_MS;
-  await chrome.storage.local.set({ badgeUntil, badgeSticky: false });
-  await chrome.alarms.create(CLEAR_BADGE_ALARM, { when: badgeUntil });
-  setTimeout(() => {
-    maybeClearBadge();
-  }, BADGE_CLEAR_MS);
-}
-
-async function maybeClearBadge() {
-  const { badgeUntil = 0, badgeSticky = false } = await chrome.storage.local.get([
-    "badgeUntil",
-    "badgeSticky"
-  ]);
-  if (badgeSticky) return;
-  if (!badgeUntil || Date.now() < badgeUntil) return;
-  await clearBadge();
-}
-
-async function clearBadge() {
-  await chrome.action.setBadgeText({ text: "" });
-  await chrome.storage.local.set({ badgeUntil: 0, badgeSticky: false });
+  await Promise.all(
+    tabs.map((tab) =>
+      tab.id == null
+        ? Promise.resolve()
+        : setTabLoginBadge(tab.id, tab.incognito ? flags.incognito : flags.normal)
+    )
+  );
   await chrome.alarms.clear(CLEAR_BADGE_ALARM);
+  await chrome.storage.local.set({
+    badgeUntil: 0,
+    badgeSticky: flags.normal || flags.incognito
+  });
 }
 
 async function setActionTooltip(titleKey, message) {
