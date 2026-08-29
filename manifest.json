@@ -1,0 +1,76 @@
+{
+  "manifest_version": 3,
+  "name": "[B.M] __MSG_extNameSuffix__",
+  "version": "0.1.0",
+  "default_locale": "zh_TW",
+  "description": "__MSG_extDescription__",
+  "permissions": [
+    "alarms",
+    "storage",
+    "tabs",
+    "notifications",
+    "scripting"
+  ],
+  "host_permissions": [
+    "https://apk.tw/*",
+    "http://apk.tw/*",
+    "https://www.apk.tw/*",
+    "http://www.apk.tw/*",
+    "https://*.gamer.com.tw/*",
+    "https://user.gamer.com.tw/*",
+    "https://act.hoyolab.com/*",
+    "https://sg-hk4e-api.hoyolab.com/*",
+    "https://*.hoyolab.com/*",
+    "https://*.hoyoverse.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_title": "[B.M] __MSG_extNameSuffix__",
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "32": "icons/icon32.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "content_scripts": [
+    {
+      "matches": [
+        "https://apk.tw/*",
+        "http://apk.tw/*",
+        "https://www.apk.tw/*",
+        "http://www.apk.tw/*"
+      ],
+      "js": ["overlay.js", "content.js"],
+      "css": ["overlay.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://home.gamer.com.tw/*",
+        "https://www.gamer.com.tw/*",
+        "https://user.gamer.com.tw/*"
+      ],
+      "js": ["overlay.js", "content-baha.js"],
+      "css": ["overlay.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://act.hoyolab.com/ys/event/signin-sea-v3/index.html*"
+      ],
+      "js": ["overlay.js", "content-genshin.js"],
+      "css": ["overlay.css"],
+      "run_at": "document_idle"
+    }
+  ],
+  "icons": {
+    "16": "icons/icon16.png",
+    "32": "icons/icon32.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  }
+}

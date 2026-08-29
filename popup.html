@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title id="extTitle">[B.M]</title>
+    <link rel="stylesheet" href="popup.css" />
+  </head>
+  <body>
+    <header>
+      <img class="logo" src="icons/icon128.png" alt="" />
+      <div>
+        <h1 id="extName">[B.M]</h1>
+        <p data-i18n="tagline"></p>
+      </div>
+    </header>
+
+    <section class="card">
+      <label class="field">
+        <span data-i18n="signTimeLabel"></span>
+        <input id="signTime" type="time" placeholder="00:01" />
+        <small data-i18n="signTimeHint"></small>
+      </label>
+      <div class="status-row">
+        <span class="label" data-i18n="nextSignLabel"></span>
+        <strong id="nextAlarm" data-i18n="computing"></strong>
+      </div>
+    </section>
+
+    <section class="card site-card" data-site="baha">
+      <label class="site-head">
+        <input type="checkbox" id="enabled-baha" checked />
+        <span data-i18n="siteBaha"></span>
+      </label>
+      <p class="site-result" id="result-baha" data-i18n="noRecord"></p>
+    </section>
+
+    <section class="card site-card" data-site="apktw">
+      <label class="site-head">
+        <input type="checkbox" id="enabled-apktw" checked />
+        <span data-i18n="siteApkTw"></span>
+      </label>
+      <p class="site-result" id="result-apktw" data-i18n="noRecord"></p>
+    </section>
+
+    <section class="card site-card" data-site="genshin">
+      <label class="site-head">
+        <input type="checkbox" id="enabled-genshin" checked />
+        <span data-i18n="siteGenshin"></span>
+      </label>
+      <p class="site-result" id="result-genshin" data-i18n="noRecord"></p>
+    </section>
+
+    <p id="incognitoHint" class="hint incognito-hint" hidden data-i18n="incognitoHint"></p>
+    <p id="hint" class="hint" data-i18n="hint"></p>
+
+    <footer>
+      <button id="signNow" type="button" class="ghost" data-i18n="signNow"></button>
+      <button id="save" type="button" data-i18n="save"></button>
+    </footer>
+
+    <p id="toast" class="toast" hidden></p>
+    <script src="popup.js"></script>
+  </body>
+</html>

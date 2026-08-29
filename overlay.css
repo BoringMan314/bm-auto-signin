@@ -1,0 +1,50 @@
+#bm-signin-hud {
+  position: fixed;
+  top: 16px;
+  left: 50%;
+  transform: translateX(-50%);
+  z-index: 2147483646;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+  width: min(360px, calc(100vw - 32px));
+  padding: 12px 14px;
+  border-radius: 12px;
+  background: rgba(32, 33, 36, 0.94);
+  color: #fff;
+  font: 12px/1.4 "Segoe UI", "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.28);
+  pointer-events: auto;
+}
+
+#bm-signin-hud .bm-signin-hud-src {
+  margin: 0;
+  color: #c4c7c5;
+  font-size: 11px;
+}
+
+#bm-signin-hud .bm-signin-hud-text {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+#bm-signin-hud .bm-signin-hud-ok {
+  align-self: flex-end;
+  margin: 4px 0 0;
+  min-width: 64px;
+  height: 28px;
+  border: 0;
+  border-radius: 8px;
+  padding: 0 12px;
+  background: #c5221f;
+  color: #fff;
+  font: inherit;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+#bm-signin-hud .bm-signin-hud-ok:hover {
+  background: #a50e0e;
+}
