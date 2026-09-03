@@ -1,5 +1,11 @@
 const ALARM_NAME = "apk-tw-daily-signin";
 const ALARM_INCOGNITO = "apk-tw-daily-signin-incognito";
+const RETRY_ALARM = "apk-tw-retry-signin";
+const RETRY_ALARM_INCOGNITO = "apk-tw-retry-signin-incognito";
+const RETRY_COUNT_KEY = "signRetryCount";
+const RETRY_COUNT_INCOGNITO_KEY = "signRetryCountIncognito";
+const RETRY_MS = 5 * 60 * 1000;
+const MAX_RETRIES = 10;
 const TIMEOUT_ALARM = "apk-tw-signin-timeout";
 const CLEAR_BADGE_ALARM = "apk-tw-clear-badge";
 const SIGN_URL = "https://apk.tw/";
@@ -70,6 +76,14 @@ chrome.runtime.onStartup.addListener(async () => {
 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
+  if (alarm.name === RETRY_ALARM) {
+    await startSignIn({ reason: "retry", incognito: false });
+    return;
+  }
+  if (alarm.name === RETRY_ALARM_INCOGNITO) {
+    await startSignIn({ reason: "retry", incognito: true });
+    return;
+  }
   if (alarm.name === ALARM_NAME) {
     await startSignIn({ reason: "alarm", incognito: false });
     await scheduleAlarm();
@@ -337,6 +351,7 @@ async function saveSettings(payload, { incognito = false } = {}) {
     await chrome.storage.local.set({ signTime, enabled, sites });
   }
   await scheduleAlarm();
+  if (!enabled) await clearRetry(incognito);
   await syncLoginBadge();
   return {
     ok: true,
@@ -401,7 +416,97 @@ function todayKey() {
   return `${year}-${month}-${day}`;
 }
 
+function retryAlarmName(incognito) {
+  return incognito ? RETRY_ALARM_INCOGNITO : RETRY_ALARM;
+}
+
+function retryCountKey(incognito) {
+  return incognito ? RETRY_COUNT_INCOGNITO_KEY : RETRY_COUNT_KEY;
+}
+
+function isRetryableStatus(status) {
+  return status === "timeout" || status === "error";
+}
+
+function isRetryableSite(site) {
+  if (!site?.enabled) return false;
+  if (site.lastSignDate === todayKey()) return false;
+  if (site.lastResult === "login" || site.lastResult === "captcha") return false;
+  return true;
+}
+
+function isLoginFailure(message) {
+  return /尚未登入|未登入|没有登录|尚未登录|not logged|not signed in|please log in|ログインしていません|未ログイン/i.test(
+    String(message || "")
+  );
+}
+
+async function clearRetry(incognito) {
+  await chrome.storage.local.set({ [retryCountKey(incognito)]: 0 });
+  await chrome.alarms.clear(retryAlarmName(incognito));
+}
+
+async function writeRetryMessage(incognito, message) {
+  const settings = await getSettings({ incognito });
+  const sites = mergeSites({ sites: settings.sites });
+  const now = new Date().toISOString();
+  const retryableIds = SITE_ORDER.filter((id) => isRetryableSite(sites[id]));
+  const failedIds = retryableIds.filter((id) => isRetryableStatus(sites[id].lastResult));
+  const ids = failedIds.length ? failedIds : retryableIds;
+  if (!ids.length) return;
+  for (const id of ids) {
+    const site = sites[id];
+    sites[id] = {
+      ...site,
+      lastResult: site.lastResult === "timeout" ? "timeout" : "error",
+      lastResultAt: now,
+      lastMessage: message
+    };
+  }
+  if (incognito) {
+    await chrome.storage.local.set({
+      [INCOGNITO_SETTINGS_KEY]: {
+        signTime: settings.signTime,
+        sites: persistableSites(sites)
+      }
+    });
+    return;
+  }
+  await chrome.storage.local.set({ sites: persistableSites(sites) });
+}
+
+async function scheduleRetry(errorMessage, incognito) {
+  const key = retryCountKey(incognito);
+  const stored = await chrome.storage.local.get(key);
+  const count = Number(stored[key] || 0);
+  if (count >= MAX_RETRIES) {
+    await clearRetry(incognito);
+    await writeRetryMessage(incognito, t("retryGaveUp", [errorMessage]));
+    return;
+  }
+  const next = count + 1;
+  await chrome.storage.local.set({ [key]: next });
+  await chrome.alarms.create(retryAlarmName(incognito), { when: Date.now() + RETRY_MS });
+  await writeRetryMessage(
+    incognito,
+    t("retryScheduled", [errorMessage, String(next), String(MAX_RETRIES)])
+  );
+}
+
+async function maybeRetryAfterRun(state) {
+  const retryable = (state.results || []).filter((item) => isRetryableStatus(item.status));
+  if (retryable.length) {
+    const message =
+      retryable.map((item) => item.message).filter(Boolean).join("；") || t("msgFailed");
+    await scheduleRetry(message, Boolean(state.incognito));
+    return;
+  }
+  await clearRetry(Boolean(state.incognito));
+}
+
 async function maybeCatchUpProfile(incognito) {
+  const retryAlarm = await chrome.alarms.get(retryAlarmName(incognito));
+  if (retryAlarm) return;
   const settings = await getSettings({ incognito });
   const due = SITE_ORDER.filter(
     (id) => settings.sites[id].enabled && settings.sites[id].lastSignDate !== todayKey()
@@ -666,10 +771,13 @@ async function startSignIn({
   try {
     const settings = await getSettings({ incognito });
     let queue = SITE_ORDER.filter((id) => settings.sites[id].enabled);
-    if (!force && reason !== "manual") {
+    if (reason === "retry") {
+      queue = queue.filter((id) => isRetryableSite(settings.sites[id]));
+    } else if (!force && reason !== "manual") {
       queue = queue.filter((id) => settings.sites[id].lastSignDate !== todayKey());
     }
     if (!queue.length) {
+      if (reason === "retry") await clearRetry(incognito);
       await finishSigningLock();
       return false;
     }
@@ -677,6 +785,11 @@ async function startSignIn({
     if (!windowId) {
       windowId = await getProfileWindowId(incognito);
       if (!windowId && reason !== "manual") {
+        if (reason === "retry") {
+          await chrome.alarms.create(retryAlarmName(incognito), {
+            when: Date.now() + RETRY_MS
+          });
+        }
         await finishSigningLock();
         return false;
       }
@@ -718,6 +831,7 @@ async function startSignIn({
     await openNextSite();
     return true;
   } catch (error) {
+    const message = t("msgOpenTabFailed", [String(error.message || error)]);
     await setSignState({
       active: false,
       signTabId: null,
@@ -726,14 +840,20 @@ async function startSignIn({
       incognito,
       windowId
     });
-    await recordSiteResult(null, "error", t("msgOpenTabFailed", [String(error.message || error)]), false);
+    await recordSiteResult(null, "error", message, false);
+    if (isLoginFailure(error.message || error)) {
+      await clearRetry(incognito);
+    } else {
+      await scheduleRetry(message, incognito);
+    }
     if (!incognito) {
       await setActionTooltip("resultError", t("notifyOpenTabFailed"));
     }
     await syncLoginBadge();
     await notify("resultError", "notifyOpenTabFailed", "", { sticky: true });
     await finishSigningLock();
-    throw error;
+    if (reason === "manual") throw error;
+    return false;
   }
 }
 
@@ -750,6 +870,7 @@ async function openNextSite() {
       queue: [],
       results: state.results || []
     });
+    await maybeRetryAfterRun(state);
     await finishSigningLock();
     return;
   }
@@ -765,16 +886,20 @@ async function openNextSite() {
     if (state.windowId) createOptions.windowId = state.windowId;
     tab = await chrome.tabs.create(createOptions);
   } catch (error) {
-    await recordSiteResult(siteId, "error", t("msgOpenTabFailed", [String(error.message || error)]), false);
+    const message = t("msgOpenTabFailed", [String(error.message || error)]);
+    await recordSiteResult(siteId, "error", message, false);
+    const results = [...(state.results || []), { siteId, status: "error", message }];
     await setSignState({
       ...state,
       active: false,
       signTabId: null,
       clicked: true,
-      queue: remaining,
-      results: [...(state.results || []), { siteId, status: "error" }]
+      queue: [],
+      results
     });
-    await openNextSite();
+    await applyQueueBadge(results, state.incognito);
+    await scheduleRetry(message, Boolean(state.incognito));
+    await finishSigningLock();
     return;
   }
   await setSignState({

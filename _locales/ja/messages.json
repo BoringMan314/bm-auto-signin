@@ -67,5 +67,17 @@
     "message": "タブを開けません：$ERROR$",
     "placeholders": { "error": { "content": "$1" } }
   },
+  "retryScheduled": {
+    "message": "$ERROR$｜5 分後に再試行します（$CURRENT$／$MAX$）",
+    "placeholders": {
+      "error": { "content": "$1" },
+      "current": { "content": "$2" },
+      "max": { "content": "$3" }
+    }
+  },
+  "retryGaveUp": {
+    "message": "$ERROR$｜10 回再試行しても失敗したため停止しました",
+    "placeholders": { "error": { "content": "$1" } }
+  },
   "unknownMessage": { "message": "不明なメッセージ" }
 }

@@ -67,5 +67,17 @@
     "message": "無法開啟分頁：$ERROR$",
     "placeholders": { "error": { "content": "$1" } }
   },
+  "retryScheduled": {
+    "message": "$ERROR$｜將於 5 分鐘後重試（$CURRENT$／$MAX$）",
+    "placeholders": {
+      "error": { "content": "$1" },
+      "current": { "content": "$2" },
+      "max": { "content": "$3" }
+    }
+  },
+  "retryGaveUp": {
+    "message": "$ERROR$｜已重試 10 次仍失敗，停止重試",
+    "placeholders": { "error": { "content": "$1" } }
+  },
   "unknownMessage": { "message": "未知訊息" }
 }

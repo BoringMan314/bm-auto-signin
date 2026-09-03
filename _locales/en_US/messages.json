@@ -67,5 +67,17 @@
     "message": "Could not open tab: $ERROR$",
     "placeholders": { "error": { "content": "$1" } }
   },
+  "retryScheduled": {
+    "message": "$ERROR$ | Retrying in 5 minutes ($CURRENT$/$MAX$)",
+    "placeholders": {
+      "error": { "content": "$1" },
+      "current": { "content": "$2" },
+      "max": { "content": "$3" }
+    }
+  },
+  "retryGaveUp": {
+    "message": "$ERROR$ | Stopped after 10 retries",
+    "placeholders": { "error": { "content": "$1" } }
+  },
   "unknownMessage": { "message": "Unknown message" }
 }

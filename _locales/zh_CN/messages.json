@@ -67,5 +67,17 @@
     "message": "无法打开分页：$ERROR$",
     "placeholders": { "error": { "content": "$1" } }
   },
+  "retryScheduled": {
+    "message": "$ERROR$｜将于 5 分钟后重试（$CURRENT$／$MAX$）",
+    "placeholders": {
+      "error": { "content": "$1" },
+      "current": { "content": "$2" },
+      "max": { "content": "$3" }
+    }
+  },
+  "retryGaveUp": {
+    "message": "$ERROR$｜已重试 10 次仍失败，停止重试",
+    "placeholders": { "error": { "content": "$1" } }
+  },
   "unknownMessage": { "message": "未知消息" }
 }
