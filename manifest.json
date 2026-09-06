@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "[B.M] __MSG_extNameSuffix__",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "default_locale": "zh_TW",
   "description": "__MSG_extDescription__",
   "homepage_url": "https://github.com/BoringMan314/bm-auto-signin",
@@ -22,7 +22,9 @@
     "https://act.hoyolab.com/*",
     "https://sg-hk4e-api.hoyolab.com/*",
     "https://*.hoyolab.com/*",
-    "https://*.hoyoverse.com/*"
+    "https://*.hoyoverse.com/*",
+    "https://klpbbs.com/*",
+    "https://www.klpbbs.com/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -64,6 +66,15 @@
         "https://act.hoyolab.com/ys/event/signin-sea-v3/index.html*"
       ],
       "js": ["overlay.js", "content-genshin.js"],
+      "css": ["overlay.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://klpbbs.com/*",
+        "https://www.klpbbs.com/*"
+      ],
+      "js": ["overlay.js", "content-klpbbs.js"],
       "css": ["overlay.css"],
       "run_at": "document_idle"
     }

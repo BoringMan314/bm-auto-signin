@@ -69,7 +69,7 @@
 1. 點選本頁綠色 **Code** → **Download ZIP** 解壓，或執行 `git clone https://github.com/BoringMan314/bm-auto-signin.git` 複製本倉庫。
 2. 以 **Chrome** 或 **Microsoft Edge** 開啟 `chrome://extensions`（在 Edge 為 `edge://extensions`）。
 3. 開啟「**開發人員模式**」→「**載入未封裝項目**」→ 選取含 [`manifest.json`](manifest.json) 的**專案根目錄**（勿選子資料夾）。
-4. 先在 Chrome 登入巴哈、APK.TW、HoYoLAB（依你要啟用的站），再點工具列圖示設定時間或按「立即簽到」驗證。
+4. 先在 Chrome 登入巴哈、APK.TW、HoYoLAB、苦力怕論壇（依你要啟用的站），再點工具列圖示設定時間或按「立即簽到」驗證。原神 HoYoLAB 與苦力怕論壇預設關閉。
 
 ---
 
@@ -85,7 +85,7 @@
 
 - **背景服務** [`background.js`](background.js)：以 `chrome.alarms` 排程每日簽到；依序開啟各站分頁；以 `chrome.scripting` 在頁面脈絡呼叫該站簽到介面或官方活動 API；以 `chrome.notifications` 回報結果。
 - **彈出視窗** [`popup.html`](popup.html) / [`popup.js`](popup.js) / [`popup.css`](popup.css)：時間、各站開關、下次鬧鐘、上次結果、立即簽到。
-- **內容腳本**：[`content.js`](content.js)（APK.TW）、[`content-baha.js`](content-baha.js)、[`content-genshin.js`](content-genshin.js) 在對應網址偵測狀態並回報背景。
+- **內容腳本**：[`content.js`](content.js)（APK.TW）、[`content-baha.js`](content-baha.js)、[`content-genshin.js`](content-genshin.js)、[`content-klpbbs.js`](content-klpbbs.js)（苦力怕論壇）在對應網址偵測狀態並回報背景。
 - **頁面提示** [`overlay.js`](overlay.js) / [`overlay.css`](overlay.css)：尚未登入時在頁面上顯示提示。
 - **設定儲存**：`chrome.storage.local`。
 
@@ -101,6 +101,7 @@
 | [`content.js`](content.js) | APK.TW 簽到內容腳本 |
 | [`content-baha.js`](content-baha.js) | 巴哈姆特簽到內容腳本 |
 | [`content-genshin.js`](content-genshin.js) | 原神 HoYoLAB 簽到內容腳本 |
+| [`content-klpbbs.js`](content-klpbbs.js) | 苦力怕論壇簽到內容腳本 |
 | [`overlay.js`](overlay.js) / [`overlay.css`](overlay.css) | 頁面登入提示 |
 | [`_locales/`](_locales/) | 多語系字串（`zh_TW`、`zh_CN`、`ja`、`en_US`） |
 | [`privacy-policy.html`](privacy-policy.html) | 隱私權政策（上架商店所需之公開網頁） |
@@ -149,7 +150,7 @@ git push origin main
 | 欄位 | 建議內容 |
 |------|----------|
 | 名稱 | `[B.M] 自動簽到` |
-| 簡短說明 | `依設定時間開啟分頁，為已登入的巴哈、APK.TW、原神 HoYoLAB 完成每日簽到，成功後自動關閉。` |
+| 簡短說明 | `依設定時間開啟分頁，為已登入的巴哈、APK.TW、原神 HoYoLAB、苦力怕論壇完成每日簽到，成功後自動關閉。` |
 | 類別 | 生產力 |
 | 語言 | 中文（台灣） |
 | 單一目的 | 依使用者指定時間（或手動立即執行），在已登入的支援網站上完成每日簽到。 |
@@ -204,7 +205,7 @@ git push origin main
 
 1. **遞增版本**：修改 `manifest.json` 中的 `version`（例如從 `0.1.0` 提升至 `0.1.1`）。
 2. **封裝套件**：將專案內容壓縮為 ZIP 檔。
-   - **必要檔案**：`manifest.json`, `background.js`, `popup.html`, `popup.css`, `popup.js`, `content.js`, `content-baha.js`, `content-genshin.js`, `overlay.js`, `overlay.css`, `privacy-policy.html`, `icons/`, `_locales/`
+   - **必要檔案**：`manifest.json`, `background.js`, `popup.html`, `popup.css`, `popup.js`, `content.js`, `content-baha.js`, `content-genshin.js`, `content-klpbbs.js`, `overlay.js`, `overlay.css`, `privacy-policy.html`, `icons/`, `_locales/`
    - **建議不打包**：`.git/`, `.gitignore`, `README.md`, `LICENSE`, `screenshot/`, `scripts/`, `*.psd`, `*.zip`, `*.url`
 3. **上傳審核**：在控制台選擇項目 →「套件」→「上傳新套件」。
 4. **提交送審**：確認版號、商店文案、截圖、隱私欄位與 `privacy-policy` 公開網址無誤後，點擊「**提交送審**」。

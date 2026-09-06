@@ -1,4 +1,4 @@
-const SITE_ORDER = ["baha", "apktw", "genshin"];
+const SITE_ORDER = ["baha", "apktw", "genshin", "klpbbs"];
 const signTimeEl = document.getElementById("signTime");
 const nextAlarmEl = document.getElementById("nextAlarm");
 const toastEl = document.getElementById("toast");
@@ -71,7 +71,8 @@ function render(reply) {
   nextAlarmEl.textContent = formatNextAlarm(reply.nextAlarm, settings.enabled);
   SITE_ORDER.forEach((id) => {
     const site = sites[id] || {};
-    document.getElementById(`enabled-${id}`).checked = site.enabled !== false;
+    document.getElementById(`enabled-${id}`).checked =
+      id === "genshin" || id === "klpbbs" ? site.enabled === true : site.enabled !== false;
     const resultEl = document.getElementById(`result-${id}`);
     resultEl.textContent = formatLastResult(site);
     resultEl.classList.toggle("is-login", site.lastResult === "login");

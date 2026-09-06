@@ -11,7 +11,7 @@ const CLEAR_BADGE_ALARM = "apk-tw-clear-badge";
 const SIGN_URL = "https://apk.tw/";
 const DEFAULT_TIME = "00:01";
 const SIGN_TIMEOUT_MS = 90000;
-const SITE_ORDER = ["baha", "apktw", "genshin"];
+const SITE_ORDER = ["baha", "apktw", "genshin", "klpbbs"];
 const SITES_INCOGNITO_KEY = "sitesIncognito";
 const INCOGNITO_SETTINGS_KEY = "incognitoSettings";
 const SITES = {
@@ -29,12 +29,17 @@ const SITES = {
     url: "https://act.hoyolab.com/ys/event/signin-sea-v3/index.html?act_id=e202102251931481",
     hostRe: /hoyolab\.com|hoyoverse\.com/i,
     nameKey: "siteGenshin"
+  },
+  klpbbs: {
+    url: "https://klpbbs.com/",
+    hostRe: /klpbbs\.com/i,
+    nameKey: "siteKlpbbs"
   }
 };
 
-function emptySiteState() {
+function emptySiteState(enabled = true) {
   return {
-    enabled: true,
+    enabled,
     lastSignDate: "",
     lastResult: "",
     lastResultAt: "",
@@ -52,7 +57,8 @@ const DEFAULT_SETTINGS = {
   sites: {
     baha: emptySiteState(),
     apktw: emptySiteState(),
-    genshin: emptySiteState()
+    genshin: emptySiteState(false),
+    klpbbs: emptySiteState(false)
   }
 };
 
@@ -187,6 +193,10 @@ async function handleMessage(message, sender) {
       return clickBaha(sender.tab?.id);
     case "genshinApi":
       return genshinApi(sender.tab?.id, message.payload || {});
+    case "klpbbsInspect":
+      return inspectKlpbbs(sender.tab?.id);
+    case "klpbbsSign":
+      return clickKlpbbs(sender.tab?.id);
     case "signResult":
       await onSignResult(message.payload || {}, sender.tab?.id);
       return { ok: true };
@@ -203,6 +213,10 @@ async function ensureDefaults() {
     if (current[key] === undefined) patch[key] = value;
   }
   if (current.sites === undefined) {
+    patch.sites = mergeSites(current);
+  } else if (current.sites.genshin === undefined || current.sites.klpbbs === undefined) {
+    // Newly added sites must be persisted explicitly so an old profile cannot
+    // inherit the historical default (enabled) when the popup is first opened.
     patch.sites = mergeSites(current);
   }
   if (Object.keys(patch).length) {
@@ -300,7 +314,10 @@ async function getSettings({ incognito = false } = {}) {
 function mergeSites(stored) {
   const sites = {};
   for (const id of SITE_ORDER) {
-    sites[id] = { ...emptySiteState(), ...(stored?.sites?.[id] || {}) };
+    sites[id] = {
+      ...emptySiteState(id !== "genshin" && id !== "klpbbs"),
+      ...(stored?.sites?.[id] || {})
+    };
     sites[id].enabled = sites[id].enabled !== false;
   }
   if (!stored?.sites && stored?.enabled === false) {
@@ -696,6 +713,51 @@ async function clickBaha(tabId) {
   }
 }
 
+async function inspectKlpbbs(tabId) {
+  if (!tabId) return { status: "pending" };
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: () => {
+        const logout = document.querySelector(
+          "a.logout[href*='action=logout'], a[href*='member.php'][href*='action=logout']"
+        );
+        if (!logout) return { status: "login" };
+        const button = document.getElementById("JD_sign");
+        if (!button) return { status: "pending" };
+        const text = (button.textContent || "").replace(/\s+/g, "");
+        if (button.classList.contains("visted") || /已签到/.test(text)) {
+          return { status: "already" };
+        }
+        return { status: "need" };
+      }
+    });
+    return results?.[0]?.result || { status: "pending" };
+  } catch (_) {
+    return { status: "pending" };
+  }
+}
+
+async function clickKlpbbs(tabId) {
+  if (!tabId) return { ok: false };
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: () => {
+        const button = document.getElementById("JD_sign");
+        if (!button || button.classList.contains("visted")) return { ok: false };
+        button.click();
+        return { ok: true };
+      }
+    });
+    return results?.[0]?.result || { ok: false };
+  } catch (error) {
+    return { ok: false, error: String(error) };
+  }
+}
+
 async function genshinApi(tabId, { action, lang = "zh-tw", actId }) {
   if (!tabId) return { ok: false };
   try {
@@ -939,6 +1001,7 @@ async function timeoutSignIn() {
 function loginMessage(siteId) {
   if (siteId === "baha") return t("msgNeedLoginBaha");
   if (siteId === "genshin") return t("msgNeedLoginGenshin");
+  if (siteId === "klpbbs") return t("msgNeedLoginKlpbbs");
   return t("msgNeedLogin");
 }
 
@@ -948,6 +1011,9 @@ function isLoginUrl(url, siteId) {
     return true;
   }
   if ((!siteId || siteId === "apktw") && /apk\.tw/i.test(url) && /action=login/i.test(url)) {
+    return true;
+  }
+  if ((!siteId || siteId === "klpbbs") && /klpbbs\.com/i.test(url) && /member\.php\?[^#]*mod=logging[^#]*action=login/i.test(url)) {
     return true;
   }
   if (!siteId || siteId === "genshin") {
@@ -990,6 +1056,11 @@ async function detectTabSignStatus(tabId) {
     const data = info?.data;
     if (data?.retcode === -100 || data?.retcode === 10001) return "login";
     if (data?.data?.is_sign || data?.data?.signed) return "already";
+    return null;
+  }
+  if (state.siteId === "klpbbs") {
+    const info = await inspectKlpbbs(tabId);
+    if (info.status === "already" || info.status === "login") return info.status;
     return null;
   }
   try {
