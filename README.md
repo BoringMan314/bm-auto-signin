@@ -39,7 +39,7 @@
 
 點擊工具列圖示開啟彈出視窗：
 
-- **每日簽到時間**：未填寫時預設 **00:01**（以電腦本地時間為準）。請在排定時間保持瀏覽器開啟，或允許擴充功能背景執行。
+- **每日簽到時間**：未填寫時預設 **00:01**（以電腦本地時間為準）。排定時間請保持瀏覽器開啟；若當日較晚才開機或開啟 Chrome，也會自動檢查並補簽尚未完成的網站。
 - **各站獨立開關**（預設皆啟用）：
   - **巴哈**：開啟 [小屋首頁](https://home.gamer.com.tw/homeindex.php) 簽到。
   - **APK.TW**：開啟 [apk.tw](https://apk.tw/) 簽到。
@@ -69,7 +69,7 @@
 1. 點選本頁綠色 **Code** → **Download ZIP** 解壓，或執行 `git clone https://github.com/BoringMan314/bm-auto-signin.git` 複製本倉庫。
 2. 以 **Chrome** 或 **Microsoft Edge** 開啟 `chrome://extensions`（在 Edge 為 `edge://extensions`）。
 3. 開啟「**開發人員模式**」→「**載入未封裝項目**」→ 選取含 [`manifest.json`](manifest.json) 的**專案根目錄**（勿選子資料夾）。
-4. 先在 Chrome 登入巴哈、APK.TW、HoYoLAB、苦力怕論壇（依你要啟用的站），再點工具列圖示設定時間或按「立即簽到」驗證。原神 HoYoLAB 與苦力怕論壇預設關閉。
+4. 先在 Chrome 登入巴哈、APK.TW、HoYoLAB、苦力怕論壇、LittleSkin（依你要啟用的站），再點工具列圖示設定時間或按「立即簽到」驗證。原神 HoYoLAB、苦力怕論壇與 LittleSkin 預設關閉。
 
 ---
 
@@ -83,9 +83,9 @@
 
 ## 技術概要
 
-- **背景服務** [`background.js`](background.js)：以 `chrome.alarms` 排程每日簽到；依序開啟各站分頁；以 `chrome.scripting` 在頁面脈絡呼叫該站簽到介面或官方活動 API；以 `chrome.notifications` 回報結果。
+- **背景服務** [`background.js`](background.js)：以 `chrome.alarms` 排程每日簽到；開機／首次開啟 Chrome、視窗出現與定時檢查時補簽漏掉的網站；依序開啟各站分頁；以 `chrome.scripting` 在頁面脈絡呼叫該站簽到介面或官方活動 API；以 `chrome.notifications` 回報結果。
 - **彈出視窗** [`popup.html`](popup.html) / [`popup.js`](popup.js) / [`popup.css`](popup.css)：時間、各站開關、下次鬧鐘、上次結果、立即簽到。
-- **內容腳本**：[`content.js`](content.js)（APK.TW）、[`content-baha.js`](content-baha.js)、[`content-genshin.js`](content-genshin.js)、[`content-klpbbs.js`](content-klpbbs.js)（苦力怕論壇）在對應網址偵測狀態並回報背景。
+- **內容腳本**：[`content.js`](content.js)（APK.TW）、[`content-baha.js`](content-baha.js)、[`content-genshin.js`](content-genshin.js)、[`content-klpbbs.js`](content-klpbbs.js)（苦力怕論壇）、[`content-littleskin.js`](content-littleskin.js)（LittleSkin）在對應網址偵測狀態並回報背景。
 - **頁面提示** [`overlay.js`](overlay.js) / [`overlay.css`](overlay.css)：尚未登入時在頁面上顯示提示。
 - **設定儲存**：`chrome.storage.local`。
 
@@ -102,6 +102,7 @@
 | [`content-baha.js`](content-baha.js) | 巴哈姆特簽到內容腳本 |
 | [`content-genshin.js`](content-genshin.js) | 原神 HoYoLAB 簽到內容腳本 |
 | [`content-klpbbs.js`](content-klpbbs.js) | 苦力怕論壇簽到內容腳本 |
+| [`content-littleskin.js`](content-littleskin.js) | LittleSkin 簽到內容腳本 |
 | [`overlay.js`](overlay.js) / [`overlay.css`](overlay.css) | 頁面登入提示 |
 | [`_locales/`](_locales/) | 多語系字串（`zh_TW`、`zh_CN`、`ja`、`en_US`） |
 | [`privacy-policy.html`](privacy-policy.html) | 隱私權政策（上架商店所需之公開網頁） |
@@ -150,7 +151,7 @@ git push origin main
 | 欄位 | 建議內容 |
 |------|----------|
 | 名稱 | `[B.M] 自動簽到` |
-| 簡短說明 | `依設定時間開啟分頁，為已登入的巴哈、APK.TW、原神 HoYoLAB、苦力怕論壇完成每日簽到，成功後自動關閉。` |
+| 簡短說明 | `依設定時間開啟分頁，為已登入的巴哈、APK.TW、原神 HoYoLAB、苦力怕論壇、LittleSkin 完成每日簽到，成功後自動關閉。` |
 | 類別 | 生產力 |
 | 語言 | 中文（台灣） |
 | 單一目的 | 依使用者指定時間（或手動立即執行），在已登入的支援網站上完成每日簽到。 |
@@ -169,7 +170,7 @@ git push origin main
 使用方式：
 1. 先在 Chrome 手動登入各網站。
 2. 點工具列圖示，設定每日時間（未填則為 00:01，以電腦本地時間為準），並勾選要啟用的網站。
-3. 按「儲存設定」。排定時間請保持瀏覽器開啟或允許背景執行。
+3. 按「儲存設定」。排定時間請保持瀏覽器開啟；若當日較晚才開機或開啟 Chrome，也會自動補簽。
 4. 也可按「立即簽到」立刻執行。
 
 若尚未登入、需要驗證碼或簽到失敗，分頁會保留並通知您手動處理。
@@ -181,7 +182,7 @@ git push origin main
 
 | 權限 | 理由 |
 |------|------|
-| `alarms` | 依使用者設定的本地時間排程每日簽到，並處理逾時與徽章清除。 |
+| `alarms` | 依使用者設定的本地時間排程每日簽到，開機後補簽漏掉的網站，並處理逾時、重試與徽章清除。 |
 | `storage` | 僅在本機保存簽到時間、各站開關與最近結果；不上傳。 |
 | `tabs` | 開啟、聚焦或關閉簽到分頁；偵測導向登入頁時保留分頁。 |
 | `notifications` | 在本機通知簽到成功、尚未登入、需要驗證碼或失敗。 |
@@ -205,7 +206,7 @@ git push origin main
 
 1. **遞增版本**：修改 `manifest.json` 中的 `version`（例如從 `0.1.0` 提升至 `0.1.1`）。
 2. **封裝套件**：將專案內容壓縮為 ZIP 檔。
-   - **必要檔案**：`manifest.json`, `background.js`, `popup.html`, `popup.css`, `popup.js`, `content.js`, `content-baha.js`, `content-genshin.js`, `content-klpbbs.js`, `overlay.js`, `overlay.css`, `privacy-policy.html`, `icons/`, `_locales/`
+   - **必要檔案**：`manifest.json`, `background.js`, `popup.html`, `popup.css`, `popup.js`, `content.js`, `content-baha.js`, `content-genshin.js`, `content-klpbbs.js`, `content-littleskin.js`, `overlay.js`, `overlay.css`, `privacy-policy.html`, `icons/`, `_locales/`
    - **建議不打包**：`.git/`, `.gitignore`, `README.md`, `LICENSE`, `screenshot/`, `scripts/`, `*.psd`, `*.zip`, `*.url`
 3. **上傳審核**：在控制台選擇項目 →「套件」→「上傳新套件」。
 4. **提交送審**：確認版號、商店文案、截圖、隱私欄位與 `privacy-policy` 公開網址無誤後，點擊「**提交送審**」。

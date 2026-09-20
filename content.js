@@ -75,7 +75,17 @@
   }
 
   async function runSignIn() {
+    if (isCloudflare502()) {
+      await report("error", t("msgApkTw502"), { closeTab: true });
+      return;
+    }
+
     await waitUntilPageOpened();
+
+    if (isCloudflare502()) {
+      await report("error", t("msgApkTw502"), { closeTab: true });
+      return;
+    }
 
     if (pageShowsAlreadySigned()) {
       await report("already", t("msgAlready"));
@@ -180,7 +190,18 @@
     return /wb\.gif/i.test(src);
   }
 
+  function isCloudflare502() {
+    if (!document.querySelector("#cf-wrapper")) return false;
+    const titleMatches = /\b502:\s*Bad gateway\b/i.test(document.title || "");
+    const details = document.querySelector("#cf-error-details")?.innerText || "";
+    const detailsMatch = /Bad gateway/i.test(details) && /Error code\s*502/i.test(details);
+    return titleMatches || detailsMatch;
+  }
+
   function inspectCurrentStatus() {
+    if (isCloudflare502()) {
+      return { ok: true, status: "error", message: t("msgApkTw502"), closeTab: true };
+    }
     if (pageShowsAlreadySigned()) {
       return { ok: true, status: "already", message: t("msgAlready") };
     }
@@ -421,7 +442,7 @@
     }
   }
 
-  async function report(status, message) {
+  async function report(status, message, options = {}) {
     if (status === "login") {
       globalThis.bmShowLoginHud?.();
     }
@@ -430,7 +451,7 @@
     }
     return chrome.runtime.sendMessage({
       type: "signResult",
-      payload: { status, message, site: "apktw" }
+      payload: { status, message, site: "apktw", closeTab: options.closeTab === true }
     });
   }
 

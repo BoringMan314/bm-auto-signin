@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "[B.M] __MSG_extNameSuffix__",
-  "version": "0.1.1",
+  "version": "0.1.2",
   "default_locale": "zh_TW",
   "description": "__MSG_extDescription__",
   "homepage_url": "https://github.com/BoringMan314/bm-auto-signin",
@@ -24,7 +24,9 @@
     "https://*.hoyolab.com/*",
     "https://*.hoyoverse.com/*",
     "https://klpbbs.com/*",
-    "https://www.klpbbs.com/*"
+    "https://www.klpbbs.com/*",
+    "https://littleskin.cn/*",
+    "https://www.littleskin.cn/*"
   ],
   "background": {
     "service_worker": "background.js"
@@ -75,6 +77,15 @@
         "https://www.klpbbs.com/*"
       ],
       "js": ["overlay.js", "content-klpbbs.js"],
+      "css": ["overlay.css"],
+      "run_at": "document_idle"
+    },
+    {
+      "matches": [
+        "https://littleskin.cn/*",
+        "https://www.littleskin.cn/*"
+      ],
+      "js": ["overlay.js", "content-littleskin.js"],
       "css": ["overlay.css"],
       "run_at": "document_idle"
     }

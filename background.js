@@ -7,11 +7,19 @@ const RETRY_COUNT_INCOGNITO_KEY = "signRetryCountIncognito";
 const RETRY_MS = 5 * 60 * 1000;
 const MAX_RETRIES = 10;
 const TIMEOUT_ALARM = "apk-tw-signin-timeout";
+const CATCHUP_ALARM = "apk-tw-catchup-check";
+const CATCHUP_START_ALARM = "apk-tw-catchup-start";
+const CATCHUP_RETRY_ALARM = "apk-tw-catchup-retry";
+const CATCHUP_PERIOD_MIN = 20;
+const CATCHUP_START_DELAY_MS = 8000;
+const CATCHUP_WINDOW_WAIT_MS = 60000;
+const CATCHUP_RETRY_MS = 2 * 60 * 1000;
 const CLEAR_BADGE_ALARM = "apk-tw-clear-badge";
 const SIGN_URL = "https://apk.tw/";
 const DEFAULT_TIME = "00:01";
 const SIGN_TIMEOUT_MS = 90000;
-const SITE_ORDER = ["baha", "apktw", "genshin", "klpbbs"];
+const KLPBBS_DRAW_TIMEOUT_MS = 15000;
+const SITE_ORDER = ["baha", "apktw", "genshin", "klpbbs", "littleskin"];
 const SITES_INCOGNITO_KEY = "sitesIncognito";
 const INCOGNITO_SETTINGS_KEY = "incognitoSettings";
 const SITES = {
@@ -34,6 +42,11 @@ const SITES = {
     url: "https://klpbbs.com/",
     hostRe: /klpbbs\.com/i,
     nameKey: "siteKlpbbs"
+  },
+  littleskin: {
+    url: "https://littleskin.cn/user",
+    hostRe: /littleskin\.cn/i,
+    nameKey: "siteLittleSkin"
   }
 };
 
@@ -58,7 +71,8 @@ const DEFAULT_SETTINGS = {
     baha: emptySiteState(),
     apktw: emptySiteState(),
     genshin: emptySiteState(false),
-    klpbbs: emptySiteState(false)
+    klpbbs: emptySiteState(false),
+    littleskin: emptySiteState(false)
   }
 };
 
@@ -73,12 +87,24 @@ chrome.runtime.onInstalled.addListener(async () => {
   await ensureDefaults();
   await scheduleAlarm();
   await syncLoginBadge();
+  await requestStartupCatchUp();
 });
 
 chrome.runtime.onStartup.addListener(async () => {
   await scheduleAlarm();
   await syncLoginBadge();
-  await maybeCatchUp();
+  await requestStartupCatchUp();
+});
+
+chrome.storage.onChanged.addListener((changes, areaName) => {
+  if (areaName !== "local") return;
+  if (!changes.sites && !changes[INCOGNITO_SETTINGS_KEY]) return;
+  getSignState()
+    .then((state) => {
+      if (state.active || signingLock) return;
+      return syncLoginBadge();
+    })
+    .catch(() => {});
 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
@@ -102,6 +128,14 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
   }
   if (alarm.name === TIMEOUT_ALARM) {
     await timeoutSignIn();
+    return;
+  }
+  if (alarm.name === CATCHUP_START_ALARM || alarm.name === CATCHUP_RETRY_ALARM) {
+    await maybeCatchUp({ waitForWindow: true });
+    return;
+  }
+  if (alarm.name === CATCHUP_ALARM) {
+    await maybeCatchUp({ waitForWindow: false });
     return;
   }
   if (alarm.name === CLEAR_BADGE_ALARM) {
@@ -157,6 +191,11 @@ chrome.tabs.onCreated.addListener((tab) => {
   applyLoginBadgeToTab(tab).catch(() => {});
 });
 
+chrome.windows.onCreated.addListener((win) => {
+  if (win.type && win.type !== "normal") return;
+  maybeCatchUpProfile(Boolean(win.incognito), { waitForWindow: false }).catch(() => {});
+});
+
 async function handleMessage(message, sender) {
   switch (message?.type) {
     case "getSettings":
@@ -197,6 +236,12 @@ async function handleMessage(message, sender) {
       return inspectKlpbbs(sender.tab?.id);
     case "klpbbsSign":
       return clickKlpbbs(sender.tab?.id);
+    case "klpbbsDrawThread":
+      return drawKlpbbsThread(sender.tab?.id);
+    case "littleskinInspect":
+      return inspectLittleSkin(sender.tab?.id);
+    case "littleskinSign":
+      return clickLittleSkin(sender.tab?.id);
     case "signResult":
       await onSignResult(message.payload || {}, sender.tab?.id);
       return { ok: true };
@@ -214,7 +259,7 @@ async function ensureDefaults() {
   }
   if (current.sites === undefined) {
     patch.sites = mergeSites(current);
-  } else if (current.sites.genshin === undefined || current.sites.klpbbs === undefined) {
+  } else if (SITE_ORDER.some((id) => current.sites[id] === undefined)) {
     // Newly added sites must be persisted explicitly so an old profile cannot
     // inherit the historical default (enabled) when the popup is first opened.
     patch.sites = mergeSites(current);
@@ -315,7 +360,7 @@ function mergeSites(stored) {
   const sites = {};
   for (const id of SITE_ORDER) {
     sites[id] = {
-      ...emptySiteState(id !== "genshin" && id !== "klpbbs"),
+      ...emptySiteState(id === "baha" || id === "apktw"),
       ...(stored?.sites?.[id] || {})
     };
     sites[id].enabled = sites[id].enabled !== false;
@@ -400,6 +445,7 @@ async function scheduleProfileAlarm(incognito) {
 async function scheduleAlarm() {
   await scheduleProfileAlarm(false);
   await scheduleProfileAlarm(true);
+  await scheduleCatchUpAlarms();
 }
 
 function getNextAlarmTimestamp(signTime) {
@@ -421,8 +467,11 @@ function getNextAlarmTimestamp(signTime) {
 }
 
 async function getNextAlarmInfo({ incognito = false } = {}) {
-  const alarm = await chrome.alarms.get(incognito ? ALARM_INCOGNITO : ALARM_NAME);
-  return alarm?.scheduledTime || null;
+  const daily = await chrome.alarms.get(incognito ? ALARM_INCOGNITO : ALARM_NAME);
+  const retry = await chrome.alarms.get(retryAlarmName(incognito));
+  const times = [daily?.scheduledTime, retry?.scheduledTime].filter(Boolean);
+  if (!times.length) return null;
+  return Math.min(...times);
 }
 
 function todayKey() {
@@ -448,8 +497,7 @@ function isRetryableStatus(status) {
 function isRetryableSite(site) {
   if (!site?.enabled) return false;
   if (site.lastSignDate === todayKey()) return false;
-  if (site.lastResult === "login" || site.lastResult === "captcha") return false;
-  return true;
+  return isRetryableStatus(site.lastResult);
 }
 
 function isLoginFailure(message) {
@@ -467,9 +515,7 @@ async function writeRetryMessage(incognito, message) {
   const settings = await getSettings({ incognito });
   const sites = mergeSites({ sites: settings.sites });
   const now = new Date().toISOString();
-  const retryableIds = SITE_ORDER.filter((id) => isRetryableSite(sites[id]));
-  const failedIds = retryableIds.filter((id) => isRetryableStatus(sites[id].lastResult));
-  const ids = failedIds.length ? failedIds : retryableIds;
+  const ids = SITE_ORDER.filter((id) => isRetryableSite(sites[id]));
   if (!ids.length) return;
   for (const id of ids) {
     const site = sites[id];
@@ -492,7 +538,16 @@ async function writeRetryMessage(incognito, message) {
   await chrome.storage.local.set({ sites: persistableSites(sites) });
 }
 
+async function hasRetryableSite(incognito) {
+  const settings = await getSettings({ incognito });
+  return SITE_ORDER.some((id) => isRetryableSite(settings.sites[id]));
+}
+
 async function scheduleRetry(errorMessage, incognito) {
+  if (!(await hasRetryableSite(incognito))) {
+    await clearRetry(incognito);
+    return;
+  }
   const key = retryCountKey(incognito);
   const stored = await chrome.storage.local.get(key);
   const count = Number(stored[key] || 0);
@@ -511,23 +566,22 @@ async function scheduleRetry(errorMessage, incognito) {
 }
 
 async function maybeRetryAfterRun(state) {
+  const incognito = Boolean(state.incognito);
   const retryable = (state.results || []).filter((item) => isRetryableStatus(item.status));
-  if (retryable.length) {
+  if (retryable.length && (await hasRetryableSite(incognito))) {
     const message =
       retryable.map((item) => item.message).filter(Boolean).join("；") || t("msgFailed");
-    await scheduleRetry(message, Boolean(state.incognito));
+    await scheduleRetry(message, incognito);
     return;
   }
-  await clearRetry(Boolean(state.incognito));
+  await clearRetry(incognito);
 }
 
-async function maybeCatchUpProfile(incognito) {
+async function maybeCatchUpProfile(incognito, { waitForWindow = false } = {}) {
   const retryAlarm = await chrome.alarms.get(retryAlarmName(incognito));
   if (retryAlarm) return;
   const settings = await getSettings({ incognito });
-  const due = SITE_ORDER.filter(
-    (id) => settings.sites[id].enabled && settings.sites[id].lastSignDate !== todayKey()
-  );
+  const due = SITE_ORDER.filter((id) => isCatchUpDueSite(settings.sites[id]));
   if (!due.length) return;
 
   const [hour, minute] = settings.signTime.split(":").map(Number);
@@ -541,14 +595,65 @@ async function maybeCatchUpProfile(incognito) {
     0,
     0
   );
-  if (now.getTime() >= scheduled.getTime()) {
-    await startSignIn({ reason: "catch-up", incognito });
+  if (now.getTime() < scheduled.getTime()) return;
+
+  let windowId = await getProfileWindowId(incognito);
+  if (!windowId && waitForWindow && !incognito) {
+    windowId = await waitForProfileWindow(false, CATCHUP_WINDOW_WAIT_MS);
   }
+  if (!windowId) {
+    if (!incognito) await scheduleCatchUpRetry();
+    return;
+  }
+
+  await startSignIn({ reason: "catch-up", incognito, windowId });
 }
 
-async function maybeCatchUp() {
-  await maybeCatchUpProfile(false);
-  await maybeCatchUpProfile(true);
+async function maybeCatchUp({ waitForWindow = false } = {}) {
+  await maybeCatchUpProfile(false, { waitForWindow });
+  await maybeCatchUpProfile(true, { waitForWindow: false });
+}
+
+function isCatchUpDueSite(site) {
+  if (!site?.enabled) return false;
+  if (site.lastSignDate === todayKey()) return false;
+  if (site.lastResult === "login" || site.lastResult === "captcha") return false;
+  return true;
+}
+
+function delay(ms) {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function waitForProfileWindow(incognito, timeoutMs) {
+  const deadline = Date.now() + timeoutMs;
+  while (Date.now() < deadline) {
+    const windowId = await getProfileWindowId(incognito);
+    if (windowId) return windowId;
+    await delay(1000);
+  }
+  return null;
+}
+
+async function scheduleCatchUpAlarms() {
+  await chrome.alarms.create(CATCHUP_ALARM, {
+    delayInMinutes: 1,
+    periodInMinutes: CATCHUP_PERIOD_MIN
+  });
+}
+
+async function requestStartupCatchUp() {
+  await chrome.alarms.create(CATCHUP_START_ALARM, {
+    when: Date.now() + CATCHUP_START_DELAY_MS
+  });
+}
+
+async function scheduleCatchUpRetry() {
+  const existing = await chrome.alarms.get(CATCHUP_RETRY_ALARM);
+  if (existing) return;
+  await chrome.alarms.create(CATCHUP_RETRY_ALARM, {
+    when: Date.now() + CATCHUP_RETRY_MS
+  });
 }
 
 async function getSignState() {
@@ -563,7 +668,7 @@ async function setSignState(signState) {
 async function isSignTab(tabId, site) {
   if (!tabId) return false;
   const state = await getSignState();
-  if (!state.active || state.signTabId !== tabId) return false;
+  if (!state.active || state.finishing || state.signTabId !== tabId) return false;
   if (site && state.siteId && site !== state.siteId) return false;
   return true;
 }
@@ -748,6 +853,147 @@ async function clickKlpbbs(tabId) {
       func: () => {
         const button = document.getElementById("JD_sign");
         if (!button || button.classList.contains("visted")) return { ok: false };
+        button.click();
+        return { ok: true };
+      }
+    });
+    return results?.[0]?.result || { ok: false };
+  } catch (error) {
+    return { ok: false, error: String(error) };
+  }
+}
+
+async function drawKlpbbsThread(tabId) {
+  if (!tabId) return { ok: false };
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: () => {
+        const button = document.querySelector("a.sd_post[href*='freeaddon_randomthread']");
+        if (!button) return { ok: false, reason: "missing" };
+        button.click();
+        return { ok: true };
+      }
+    });
+    return results?.[0]?.result || { ok: false };
+  } catch (error) {
+    return { ok: false, error: String(error) };
+  }
+}
+
+async function waitForKlpbbsDraw(tabId) {
+  const deadline = Date.now() + KLPBBS_DRAW_TIMEOUT_MS;
+  while (Date.now() < deadline) {
+    try {
+      const tab = await chrome.tabs.get(tabId);
+      const url = tab.url || "";
+      if (/^https:\/\/(?:www\.)?klpbbs\.com\/(?:thread-\d+-|forum\.php\?[^#]*mod=viewthread)/i.test(url)) {
+        return { ok: true, url };
+      }
+    } catch (_) {
+      return { ok: false, reason: "tab-closed" };
+    }
+    await new Promise((resolve) => setTimeout(resolve, 300));
+  }
+  return { ok: false, reason: "timeout" };
+}
+
+async function inspectLittleSkin(tabId) {
+  if (!tabId) return { status: "pending" };
+  try {
+    await dismissLittleSkinDonation(tabId);
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: () => {
+        const visible = (el) => {
+          if (!el) return false;
+          const style = getComputedStyle(el);
+          return (
+            style.display !== "none" &&
+            style.visibility !== "hidden" &&
+            Number(style.opacity) > 0 &&
+            el.getClientRects().length > 0
+          );
+        };
+        const geetestState = () => {
+          const panel = document.querySelector(".geetest_panel");
+          if (!visible(panel)) return "none";
+          const loading = panel.querySelector(".geetest_panel_loading");
+          const success = panel.querySelector(".geetest_panel_success");
+          const box = panel.querySelector(".geetest_panel_box");
+          const text = panel.textContent || "";
+          if (visible(success) || /通过验证|通過驗證/.test(text)) return "passed";
+          if (visible(loading) || /智能验证|智能驗證|检测中|檢測中/.test(text)) return "checking";
+          if (
+            (box && /geetest_panelshowslide|geetest_panelshowclick/.test(box.className)) ||
+            panel.querySelector(
+              ".geetest_slider, .geetest_canvas_img, .geetest_item_wrap, .geetest_puzzle, .geetest_window"
+            )
+          ) {
+            return "need";
+          }
+          return "checking";
+        };
+        if (!window.blessing?.user?.uid || !document.getElementById("logout-button")) {
+          return { status: "login" };
+        }
+        if (geetestState() === "need") return { status: "captcha" };
+        const button = document.querySelector("#usage-box .card-footer button");
+        if (!button) return { status: "pending" };
+        const text = (button.textContent || "").replace(/\s+/g, "");
+        // LittleSkin first renders a disabled "簽到" button with a spinner.
+        // That is its loading state, not a completed sign-in.
+        if (button.querySelector(".fa-spinner.fa-spin")) return { status: "pending" };
+        if (/在\d+時后可用|在\d+小时后可用|available in/i.test(text)) {
+          return { status: "already" };
+        }
+        if (/簽到|签到|sign in/i.test(text) && !button.disabled) return { status: "need" };
+        return { status: "pending" };
+      }
+    });
+    return results?.[0]?.result || { status: "pending" };
+  } catch (_) {
+    return { status: "pending" };
+  }
+}
+
+async function dismissLittleSkinDonation(tabId) {
+  if (!tabId) return { ok: false };
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: () => {
+        const buttons = [...document.querySelectorAll("button, [role='button']")];
+        const visible = (element) => {
+          const style = getComputedStyle(element);
+          return style.display !== "none" && style.visibility !== "hidden" && element.getClientRects().length;
+        };
+        const find = (pattern) =>
+          buttons.find((button) => pattern.test((button.textContent || "").replace(/\s+/g, "")) && visible(button));
+        const button = find(/不再(?:顯示|显示)/) || find(/下次一定/);
+        if (!button) return { ok: false, dismissed: false };
+        button.click();
+        return { ok: true, dismissed: true };
+      }
+    });
+    return results?.[0]?.result || { ok: false };
+  } catch (_) {
+    return { ok: false };
+  }
+}
+
+async function clickLittleSkin(tabId) {
+  if (!tabId) return { ok: false };
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: () => {
+        const button = document.querySelector("#usage-box .card-footer button");
+        if (!button || button.disabled) return { ok: false };
         button.click();
         return { ok: true };
       }
@@ -986,7 +1232,13 @@ async function timeoutSignIn() {
   const state = await getSignState();
   if (!state.active) return;
   const detected = await detectTabSignStatus(state.signTabId);
-  const status = detected === "already" || detected === "success" || detected === "login" ? detected : "timeout";
+  const status =
+    detected === "already" ||
+    detected === "success" ||
+    detected === "login" ||
+    detected === "captcha"
+      ? detected
+      : "timeout";
   const message =
     status === "already"
       ? t("msgSuccess")
@@ -1002,6 +1254,7 @@ function loginMessage(siteId) {
   if (siteId === "baha") return t("msgNeedLoginBaha");
   if (siteId === "genshin") return t("msgNeedLoginGenshin");
   if (siteId === "klpbbs") return t("msgNeedLoginKlpbbs");
+  if (siteId === "littleskin") return t("msgNeedLoginLittleSkin");
   return t("msgNeedLogin");
 }
 
@@ -1014,6 +1267,9 @@ function isLoginUrl(url, siteId) {
     return true;
   }
   if ((!siteId || siteId === "klpbbs") && /klpbbs\.com/i.test(url) && /member\.php\?[^#]*mod=logging[^#]*action=login/i.test(url)) {
+    return true;
+  }
+  if ((!siteId || siteId === "littleskin") && /littleskin\.cn/i.test(url) && /\/auth\/login/i.test(url)) {
     return true;
   }
   if (!siteId || siteId === "genshin") {
@@ -1063,6 +1319,13 @@ async function detectTabSignStatus(tabId) {
     if (info.status === "already" || info.status === "login") return info.status;
     return null;
   }
+  if (state.siteId === "littleskin") {
+    const info = await inspectLittleSkin(tabId);
+    if (info.status === "already" || info.status === "login" || info.status === "captcha") {
+      return info.status;
+    }
+    return null;
+  }
   try {
     const results = await chrome.scripting.executeScript({
       target: { tabId },
@@ -1101,15 +1364,32 @@ async function onSignResult(payload, tabId) {
   if (!state.active && status !== "success") return;
   await setSignState({ ...state, finishing: true });
 
+  let keepOpen = false;
+  if (status === "success" && siteId === "klpbbs" && payload.drawKlpbbs) {
+    const drawn = await drawKlpbbsThread(tabId || state.signTabId);
+    const completed = drawn.ok && (await waitForKlpbbsDraw(tabId || state.signTabId));
+    if (!completed?.ok) {
+      keepOpen = true;
+      message = t("msgKlpbbsDrawFailed");
+    }
+  }
+
   const siteLabel = t(SITES[siteId]?.nameKey || "siteApkTw");
   const markToday = status === "success";
   await recordSiteResult(siteId, status, message, markToday);
-  await syncLoginBadge();
 
   if (status === "success") {
-    await notify("resultSuccess", "notifySuccessBody", `${siteLabel}｜${message}`);
-    if (isManagedTab) {
+    await notify(
+      keepOpen ? "resultError" : "resultSuccess",
+      keepOpen ? "notifyErrorBody" : "notifySuccessBody",
+      `${siteLabel}｜${message}`,
+      { sticky: keepOpen }
+    );
+    if (isManagedTab && !keepOpen) {
       await closeManagedTabs(state.signTabId);
+    } else if (keepOpen) {
+      await focusTab(tabId || state.signTabId);
+      await detachCurrentTab(state);
     }
   } else if (status === "captcha") {
     await notify("resultCaptcha", "notifyCaptchaBody", `${siteLabel}｜${message || t("msgCaptchaKept")}`, { sticky: true });
@@ -1123,7 +1403,11 @@ async function onSignResult(payload, tabId) {
     await detachCurrentTab(state);
   } else {
     await notify("resultError", "notifyErrorBody", `${siteLabel}｜${message || t("msgFailed")}`, { sticky: true });
-    await detachCurrentTab(state);
+    if (payload.closeTab && isManagedTab) {
+      await closeManagedTabs(state.signTabId);
+    } else {
+      await detachCurrentTab(state);
+    }
   }
 
   await chrome.alarms.clear(TIMEOUT_ALARM);
@@ -1240,16 +1524,19 @@ async function applyQueueBadge(results, _incognito = false) {
   await syncLoginBadge();
 }
 
-function siteHasLoginFailure(settings) {
+function siteNeedsAttention(settings) {
   return SITE_ORDER.some(
-    (id) => settings.sites[id]?.enabled !== false && settings.sites[id]?.lastResult === "login"
+    (id) =>
+      settings.sites[id]?.enabled !== false &&
+      Boolean(settings.sites[id]?.lastResult) &&
+      settings.sites[id]?.lastResult !== "success"
   );
 }
 
 async function loginFailureFlags() {
   return {
-    normal: siteHasLoginFailure(await getSettings()),
-    incognito: siteHasLoginFailure(await getSettings({ incognito: true }))
+    normal: siteNeedsAttention(await getSettings()),
+    incognito: siteNeedsAttention(await getSettings({ incognito: true }))
   };
 }
 
@@ -1278,6 +1565,8 @@ async function applyLoginBadgeToTab(tab) {
 async function syncLoginBadge() {
   const flags = await loginFailureFlags();
   try {
+    // The default badge is shared by normal and incognito windows. Keep it
+    // empty and use tab-specific badges below so the two profiles do not leak.
     await chrome.action.setBadgeText({ text: "" });
   } catch (_) {
     /* ignore */
