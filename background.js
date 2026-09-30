@@ -19,7 +19,7 @@ const SIGN_URL = "https://apk.tw/";
 const DEFAULT_TIME = "00:01";
 const SIGN_TIMEOUT_MS = 90000;
 const KLPBBS_DRAW_TIMEOUT_MS = 15000;
-const SITE_ORDER = ["baha", "apktw", "genshin", "klpbbs", "littleskin"];
+const SITE_ORDER = ["baha", "apktw", "eyny", "genshin", "klpbbs", "littleskin"];
 const SITES_INCOGNITO_KEY = "sitesIncognito";
 const INCOGNITO_SETTINGS_KEY = "incognitoSettings";
 const SITES = {
@@ -32,6 +32,11 @@ const SITES = {
     url: "https://apk.tw/",
     hostRe: /apk\.tw/i,
     nameKey: "siteApkTw"
+  },
+  eyny: {
+    url: "https://05.eyny.com/",
+    hostRe: /eyny\.com/i,
+    nameKey: "siteEyny"
   },
   genshin: {
     url: "https://act.hoyolab.com/ys/event/signin-sea-v3/index.html?act_id=e202102251931481",
@@ -49,6 +54,10 @@ const SITES = {
     nameKey: "siteLittleSkin"
   }
 };
+
+function isDefaultEnabled(id) {
+  return id === "baha" || id === "apktw" || id === "eyny";
+}
 
 function emptySiteState(enabled = true) {
   return {
@@ -70,6 +79,7 @@ const DEFAULT_SETTINGS = {
   sites: {
     baha: emptySiteState(),
     apktw: emptySiteState(),
+    eyny: emptySiteState(),
     genshin: emptySiteState(false),
     klpbbs: emptySiteState(false),
     littleskin: emptySiteState(false)
@@ -117,13 +127,13 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     return;
   }
   if (alarm.name === ALARM_NAME) {
+    await scheduleProfileAlarm(false, { reschedule: true });
     await startSignIn({ reason: "alarm", incognito: false });
-    await scheduleAlarm();
     return;
   }
   if (alarm.name === ALARM_INCOGNITO) {
+    await scheduleProfileAlarm(true, { reschedule: true });
     await startSignIn({ reason: "alarm", incognito: true });
-    await scheduleAlarm();
     return;
   }
   if (alarm.name === TIMEOUT_ALARM) {
@@ -236,6 +246,10 @@ async function handleMessage(message, sender) {
       return inspectKlpbbs(sender.tab?.id);
     case "klpbbsSign":
       return clickKlpbbs(sender.tab?.id);
+    case "eynyInspect":
+      return inspectEyny(sender.tab?.id);
+    case "eynyHook":
+      return hookEyny(sender.tab?.id);
     case "klpbbsDrawThread":
       return drawKlpbbsThread(sender.tab?.id);
     case "littleskinInspect":
@@ -257,13 +271,16 @@ async function ensureDefaults() {
     if (key === "sites") continue;
     if (current[key] === undefined) patch[key] = value;
   }
-  if (current.sites === undefined) {
-    patch.sites = mergeSites(current);
-  } else if (SITE_ORDER.some((id) => current.sites[id] === undefined)) {
-    // Newly added sites must be persisted explicitly so an old profile cannot
-    // inherit the historical default (enabled) when the popup is first opened.
-    patch.sites = mergeSites(current);
+  const latest = await chrome.storage.local.get("sites");
+  const sites = { ...(latest.sites || current.sites || {}) };
+  let sitesChanged = current.sites === undefined;
+  for (const id of SITE_ORDER) {
+    if (sites[id] === undefined) {
+      sites[id] = emptySiteState(isDefaultEnabled(id));
+      sitesChanged = true;
+    }
   }
+  if (sitesChanged) patch.sites = sites;
   if (Object.keys(patch).length) {
     await chrome.storage.local.set(patch);
   }
@@ -287,7 +304,7 @@ function persistableSites(sites) {
   const scoped = {};
   for (const id of SITE_ORDER) {
     scoped[id] = {
-      enabled: sites[id].enabled !== false,
+      enabled: sites[id].enabled === true,
       ...resultSnapshot(sites[id])
     };
   }
@@ -305,7 +322,7 @@ function readIncognitoFromStored(stored, normal) {
     for (const id of SITE_ORDER) {
       sites[id] = {
         ...emptySiteState(),
-        enabled: normal.sites[id].enabled !== false
+        enabled: normal.sites[id].enabled === true
       };
     }
     return { signTime: normal.signTime, sites };
@@ -314,7 +331,7 @@ function readIncognitoFromStored(stored, normal) {
   const sites = mergeSites({ sites: (hasRaw ? raw.sites : legacy) || {} });
   if (!hasRaw && hasLegacy) {
     for (const id of SITE_ORDER) {
-      sites[id].enabled = normal.sites[id].enabled !== false;
+      sites[id].enabled = normal.sites[id].enabled === true;
     }
   }
   if (hasRaw && legacy) {
@@ -359,11 +376,17 @@ async function getSettings({ incognito = false } = {}) {
 function mergeSites(stored) {
   const sites = {};
   for (const id of SITE_ORDER) {
-    sites[id] = {
-      ...emptySiteState(id === "baha" || id === "apktw"),
-      ...(stored?.sites?.[id] || {})
-    };
-    sites[id].enabled = sites[id].enabled !== false;
+    const saved = stored?.sites?.[id];
+    const defaults = emptySiteState(isDefaultEnabled(id));
+    if (!saved || typeof saved !== "object") {
+      sites[id] = defaults;
+    } else {
+      sites[id] = {
+        ...defaults,
+        ...saved,
+        enabled: typeof saved.enabled === "boolean" ? saved.enabled : defaults.enabled
+      };
+    }
   }
   if (!stored?.sites && stored?.enabled === false) {
     for (const id of SITE_ORDER) sites[id].enabled = false;
@@ -432,11 +455,22 @@ function normalizeTime(value) {
   return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
 }
 
-async function scheduleProfileAlarm(incognito) {
+async function scheduleProfileAlarm(incognito, { reschedule = false } = {}) {
   const name = incognito ? ALARM_INCOGNITO : ALARM_NAME;
   const settings = await getSettings({ incognito });
-  await chrome.alarms.clear(name);
-  if (!SITE_ORDER.some((id) => settings.sites[id].enabled)) return null;
+  if (!SITE_ORDER.some((id) => settings.sites[id].enabled)) {
+    await chrome.alarms.clear(name);
+    return null;
+  }
+  const existing = await chrome.alarms.get(name);
+  if (existing && !reschedule) {
+    const date = new Date(existing.scheduledTime);
+    const [hour, minute] = settings.signTime.split(":").map(Number);
+    // Keep an unchanged alarm, including one already due but not delivered yet.
+    if (date.getHours() === hour && date.getMinutes() === minute) {
+      return existing.scheduledTime;
+    }
+  }
   const when = getNextAlarmTimestamp(settings.signTime);
   await chrome.alarms.create(name, { when });
   return when;
@@ -460,7 +494,7 @@ function getNextAlarmTimestamp(signTime) {
     0,
     0
   );
-  if (next.getTime() <= now.getTime() + 2000) {
+  if (next.getTime() <= now.getTime()) {
     next.setDate(next.getDate() + 1);
   }
   return next.getTime();
@@ -474,8 +508,7 @@ async function getNextAlarmInfo({ incognito = false } = {}) {
   return Math.min(...times);
 }
 
-function todayKey() {
-  const now = new Date();
+function todayKey(now = new Date()) {
   const year = now.getFullYear();
   const month = String(now.getMonth() + 1).padStart(2, "0");
   const day = String(now.getDate()).padStart(2, "0");
@@ -617,7 +650,10 @@ async function maybeCatchUp({ waitForWindow = false } = {}) {
 function isCatchUpDueSite(site) {
   if (!site?.enabled) return false;
   if (site.lastSignDate === todayKey()) return false;
-  if (site.lastResult === "login" || site.lastResult === "captcha") return false;
+  if (site.lastResult === "login" || site.lastResult === "captcha") {
+    const resultDate = new Date(site.lastResultAt);
+    if (todayKey(resultDate) === todayKey()) return false;
+  }
   return true;
 }
 
@@ -863,6 +899,119 @@ async function clickKlpbbs(tabId) {
   }
 }
 
+async function hookEyny(tabId) {
+  if (!tabId) return { ok: false };
+  try {
+    await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: () => {
+        if (window.__bmEynyHooked) return;
+        window.__bmEynyHooked = true;
+        window.__bmEynyNotice = window.__bmEynyNotice || "";
+        const note = (msg) => {
+          const text = String(msg || "").replace(/\s+/g, " ").trim();
+          if (
+            text &&
+            text.length <= 240 &&
+            /已簽到|已签到|簽到成功|签到成功|今日已簽|今天已簽|積分\s*\+|积分\s*\+/.test(text)
+          ) {
+            window.__bmEynyNotice = text;
+          }
+        };
+        const wrapFn = (fn) => {
+          if (typeof fn !== "function" || fn.__bmHooked) return fn;
+          const wrapped = function () {
+            for (const arg of arguments) {
+              if (typeof arg === "string") note(arg);
+            }
+            return fn.apply(this, arguments);
+          };
+          wrapped.__bmHooked = true;
+          return wrapped;
+        };
+        const trap = (name) => {
+          let current = wrapFn(window[name]);
+          try {
+            Object.defineProperty(window, name, {
+              configurable: true,
+              get() {
+                return current;
+              },
+              set(fn) {
+                current = wrapFn(fn);
+              }
+            });
+          } catch (_) {
+            if (current) window[name] = current;
+          }
+        };
+        trap("showDialog");
+        trap("showPrompt");
+      }
+    });
+    return { ok: true };
+  } catch (error) {
+    return { ok: false, error: String(error) };
+  }
+}
+
+async function inspectEyny(tabId) {
+  if (!tabId) return { status: "pending" };
+  try {
+    const results = await chrome.scripting.executeScript({
+      target: { tabId },
+      world: "MAIN",
+      func: () => {
+        const textOf = (el) => (el?.innerText || el?.textContent || "").replace(/\s+/g, " ").trim();
+        const pageText = textOf(document.body);
+        if (
+          /瀏覽器安全檢查|verify your browser/i.test(pageText) &&
+          !document.querySelector("#toptb, #nv, #um, #ct")
+        ) {
+          return { status: "pending", reason: "security" };
+        }
+        if (!document.querySelector("#toptb, #nv, #um, #ct, .bm, #wp")) {
+          return { status: "pending", reason: "loading" };
+        }
+        const logout = document.querySelector("a[href*='action=logout']");
+        if (!logout) {
+          if (
+            /member\.php\?[^#]*action=login/i.test(location.href) ||
+            /您需要先登錄|您需要先登入|您尚未登錄|您尚未登入|需要登錄後才能|需要登入後才能|請先登錄|請先登入|抱歉，您需要登錄/.test(
+              pageText
+            ) ||
+            document.querySelector("a[href*='action=login']")
+          ) {
+            return { status: "login" };
+          }
+          return { status: "pending", reason: "auth" };
+        }
+        const noticeRe =
+          /已簽到|已签到|簽到成功|签到成功|今日已簽|今天已簽|今日已領|積分\s*\+|积分\s*\+|獲得\s*\d+\s*積分|获得\s*\d+\s*积分/;
+        const nodes = document.querySelectorAll(
+          "#ntcwin, #messagetext, #creditnotice, .alert_right, .alert_info, [id^='fwin_'], #append_parent > div"
+        );
+        let notice = String(window.__bmEynyNotice || "");
+        for (const node of nodes) {
+          const text = textOf(node);
+          if (text && text.length <= 240 && noticeRe.test(text)) {
+            notice = text;
+            break;
+          }
+        }
+        if (notice && (notice === "creditnotice" || noticeRe.test(notice))) {
+          return { status: "already", notice };
+        }
+        return { status: "ready" };
+      }
+    });
+    return results?.[0]?.result || { status: "pending" };
+  } catch (_) {
+    return { status: "pending" };
+  }
+}
+
 async function drawKlpbbsThread(tabId) {
   if (!tabId) return { ok: false };
   try {
@@ -1081,6 +1230,8 @@ async function startSignIn({
     let queue = SITE_ORDER.filter((id) => settings.sites[id].enabled);
     if (reason === "retry") {
       queue = queue.filter((id) => isRetryableSite(settings.sites[id]));
+    } else if (reason === "catch-up" && !force) {
+      queue = queue.filter((id) => isCatchUpDueSite(settings.sites[id]));
     } else if (!force && reason !== "manual") {
       queue = queue.filter((id) => settings.sites[id].lastSignDate !== todayKey());
     }
@@ -1255,6 +1406,7 @@ function loginMessage(siteId) {
   if (siteId === "genshin") return t("msgNeedLoginGenshin");
   if (siteId === "klpbbs") return t("msgNeedLoginKlpbbs");
   if (siteId === "littleskin") return t("msgNeedLoginLittleSkin");
+  if (siteId === "eyny") return t("msgNeedLoginEyny");
   return t("msgNeedLogin");
 }
 
@@ -1264,6 +1416,9 @@ function isLoginUrl(url, siteId) {
     return true;
   }
   if ((!siteId || siteId === "apktw") && /apk\.tw/i.test(url) && /action=login/i.test(url)) {
+    return true;
+  }
+  if ((!siteId || siteId === "eyny") && /eyny\.com/i.test(url) && /action=login/i.test(url)) {
     return true;
   }
   if ((!siteId || siteId === "klpbbs") && /klpbbs\.com/i.test(url) && /member\.php\?[^#]*mod=logging[^#]*action=login/i.test(url)) {
@@ -1317,6 +1472,12 @@ async function detectTabSignStatus(tabId) {
   if (state.siteId === "klpbbs") {
     const info = await inspectKlpbbs(tabId);
     if (info.status === "already" || info.status === "login") return info.status;
+    return null;
+  }
+  if (state.siteId === "eyny") {
+    const info = await inspectEyny(tabId);
+    if (info.status === "already" || info.status === "ready") return "already";
+    if (info.status === "login") return "login";
     return null;
   }
   if (state.siteId === "littleskin") {
@@ -1527,7 +1688,7 @@ async function applyQueueBadge(results, _incognito = false) {
 function siteNeedsAttention(settings) {
   return SITE_ORDER.some(
     (id) =>
-      settings.sites[id]?.enabled !== false &&
+      settings.sites[id]?.enabled === true &&
       Boolean(settings.sites[id]?.lastResult) &&
       settings.sites[id]?.lastResult !== "success"
   );
