@@ -24,7 +24,13 @@
 
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type !== "flushStatus") return;
-    inspect().then(sendResponse).catch(() => sendResponse({ ok: true, status: "pending" }));
+    (async () => {
+      try {
+        sendResponse(await inspect());
+      } catch (_) {
+        sendResponse({ ok: true, status: "pending" });
+      }
+    })();
     return true;
   });
 
@@ -66,7 +72,6 @@
     const toasted = await waitFor(async () => {
       const state = await inspect();
       if (state.status === "already" || state.status === "login") return state;
-      if (capturedNotice) return { ok: true, status: "already" };
       return { ok: true, status: "pending" };
     }, TOAST_WAIT_MS);
 
@@ -74,15 +79,20 @@
       await report("login", t("msgNeedLoginEyny"));
       return;
     }
-    await report("already", t("msgAlready"));
+    if (toasted?.status === "already") {
+      await report("already", t("msgAlready"));
+      return;
+    }
+    await report("timeout", t("msgTimeoutKept"));
   }
 
   async function inspect() {
     const reply = await send({ type: "eynyInspect" });
     if (!reply?.status) return { ok: true, status: "pending" };
     if (reply.status === "login") return { ok: true, status: "login" };
-    if (reply.status === "already" || capturedNotice) return { ok: true, status: "already" };
-    if (reply.status === "ready") return { ok: true, status: "ready" };
+    if (reply.status === "already" || reply.status === "ready") {
+      return { ok: true, status: "already" };
+    }
     return { ok: true, status: "pending" };
   }
 
@@ -90,7 +100,7 @@
     const scan = (root) => {
       if (!root) return;
       if (root.nodeType === Node.TEXT_NODE) {
-        noteText(root.textContent || "");
+        if (isNoticeNode(root.parentElement)) noteText(root.textContent || "");
         return;
       }
       if (root.nodeType !== Node.ELEMENT_NODE) return;
@@ -105,6 +115,7 @@
       for (const record of records) {
         if (record.target) scan(record.target);
         for (const node of record.addedNodes || []) scan(node);
+        for (const node of record.removedNodes || []) scan(node);
       }
     });
     const start = () => {

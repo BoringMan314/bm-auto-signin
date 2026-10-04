@@ -64,6 +64,14 @@
       return;
     }
     const clicked = await send({ type: "klpbbsSign" });
+    if (clicked?.status === "already") {
+      await report("already", t("msgAlready"));
+      return;
+    }
+    if (clicked?.status === "login") {
+      await report("login", t("msgNeedLoginKlpbbs"));
+      return;
+    }
     if (!clicked?.ok) {
       await report("error", t("msgKlpbbsNoButton"));
       return;

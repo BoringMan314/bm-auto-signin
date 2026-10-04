@@ -3,7 +3,6 @@ const fs = require("node:fs");
 const path = require("node:path");
 const vm = require("node:vm");
 
-// Local dates exercise the same timezone rules as the extension.
 let now = new Date(2026, 8, 30, 10, 0, 1).getTime();
 class Clock extends Date {
   constructor(...args) { super(...(args.length ? args : [now])); }
@@ -58,7 +57,6 @@ const incognito = "apk-tw-daily-signin-incognito";
   assert.equal(alarms.get(normal).scheduledTime, now - 1000);
   assert.equal(alarms.get(incognito).scheduledTime, now - 1000);
 
-  // Isolate dispatch from real tabs and keep the counterpart alarm pending.
   run("startSignIn = async () => true");
   await onAlarm({ name: normal });
   assert.equal(alarms.get(normal).scheduledTime, new Date(2026, 9, 1, 10).getTime());

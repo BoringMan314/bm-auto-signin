@@ -46,7 +46,6 @@ async function popupContext() {
     ctx.incognito = Boolean(win.incognito);
     ctx.windowId = win.id;
   } catch (_) {
-    /* popup may not have a window id */
   }
   return ctx;
 }

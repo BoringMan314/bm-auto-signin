@@ -37,7 +37,6 @@ def make_icon(size):
         fill=BLUE,
     )
 
-    # check mark
     stroke = max(2, size // 10)
     x0 = int(size * 0.30)
     y0 = int(size * 0.62)

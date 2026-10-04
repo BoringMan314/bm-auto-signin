@@ -34,7 +34,7 @@ const SITES = {
     nameKey: "siteApkTw"
   },
   eyny: {
-    url: "https://05.eyny.com/",
+    url: "https://www.eyny.com/",
     hostRe: /eyny\.com/i,
     nameKey: "siteEyny"
   },
@@ -86,8 +86,11 @@ const DEFAULT_SETTINGS = {
   }
 };
 
-let signingLock = false;
-const pendingSignIns = [];
+const signingLocks = new Set();
+
+function timeoutAlarmName(incognito) {
+  return incognito ? `${TIMEOUT_ALARM}-incognito` : TIMEOUT_ALARM;
+}
 
 function t(key, substitutions) {
   return chrome.i18n.getMessage(key, substitutions) || key;
@@ -108,13 +111,9 @@ chrome.runtime.onStartup.addListener(async () => {
 
 chrome.storage.onChanged.addListener((changes, areaName) => {
   if (areaName !== "local") return;
-  if (!changes.sites && !changes[INCOGNITO_SETTINGS_KEY]) return;
-  getSignState()
-    .then((state) => {
-      if (state.active || signingLock) return;
-      return syncLoginBadge();
-    })
-    .catch(() => {});
+  if (!changes.sites && !changes[INCOGNITO_SETTINGS_KEY] &&
+      !changes[SITES_INCOGNITO_KEY] && !changes.enabled && !changes.lastResult) return;
+  syncLoginBadge().catch(() => {});
 });
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
@@ -136,8 +135,8 @@ chrome.alarms.onAlarm.addListener(async (alarm) => {
     await startSignIn({ reason: "alarm", incognito: true });
     return;
   }
-  if (alarm.name === TIMEOUT_ALARM) {
-    await timeoutSignIn();
+  if (alarm.name === TIMEOUT_ALARM || alarm.name === timeoutAlarmName(true)) {
+    await timeoutSignIn(alarm.name === timeoutAlarmName(true));
     return;
   }
   if (alarm.name === CATCHUP_START_ALARM || alarm.name === CATCHUP_RETRY_ALARM) {
@@ -161,34 +160,36 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
 });
 
 chrome.tabs.onRemoved.addListener(async (tabId) => {
-  const state = await getSignState();
+  const state = await getSignStateForTab(tabId);
   if (state.signTabId !== tabId) return;
-  await chrome.alarms.clear(TIMEOUT_ALARM);
+  await chrome.alarms.clear(timeoutAlarmName(state.incognito));
   await setSignState({ ...state, signTabId: null, active: false, clicked: true });
-  if ((state.queue && state.queue.length) || signingLock) {
-    signingLock = true;
-    await openNextSite();
+  if ((state.queue && state.queue.length) || signingLocks.has(Boolean(state.incognito))) {
+    signingLocks.add(Boolean(state.incognito));
+    await openNextSite(Boolean(state.incognito));
     return;
   }
-  await finishSigningLock();
+  await finishSigningLock(Boolean(state.incognito));
 });
 
 chrome.tabs.onCreated.addListener(async (tab) => {
-  const state = await getSignState();
+  const state = await getSignStateForTab(tab.openerTabId);
   if (!state.active || !state.signTabId) return;
   if (tab.id === state.signTabId) return;
   if (tab.openerTabId !== state.signTabId) return;
   try {
     await chrome.tabs.remove(tab.id);
   } catch (_) {
-    /* ignore */
   }
 });
 
 chrome.tabs.onUpdated.addListener(async (tabId, info, tab) => {
+  if (info.status === "loading" || info.status === "complete" || info.url) {
+    applyLoginBadgeToTab(tab).catch(() => {});
+  }
   const url = info.url || (info.status === "complete" ? tab.url : "");
   if (!url) return;
-  const state = await getSignState();
+  const state = await getSignStateForTab(tabId);
   if (!state.active || state.finishing || state.signTabId !== tabId) return;
   if (!isLoginUrl(url, state.siteId)) return;
   await onSignResult(
@@ -234,6 +235,8 @@ async function handleMessage(message, sender) {
       return { ok: true, ready: await isTabMarkedReady(sender.tab?.id) };
     case "claimClick":
       return claimClick(sender.tab?.id);
+    case "apk502Retry":
+      return claimApk502Retry(sender.tab?.id);
     case "clickSignButton":
       return clickSignButton(sender.tab?.id);
     case "bahaInspect":
@@ -336,7 +339,7 @@ function readIncognitoFromStored(stored, normal) {
   }
   if (hasRaw && legacy) {
     for (const id of SITE_ORDER) {
-      if (!sites[id].lastResult && legacy[id]?.lastResult) {
+      if (!Object.prototype.hasOwnProperty.call(raw.sites || {}, id) && legacy[id]?.lastResult) {
         Object.assign(sites[id], resultSnapshot(legacy[id]));
       }
     }
@@ -466,7 +469,6 @@ async function scheduleProfileAlarm(incognito, { reschedule = false } = {}) {
   if (existing && !reschedule) {
     const date = new Date(existing.scheduledTime);
     const [hour, minute] = settings.signTime.split(":").map(Number);
-    // Keep an unchanged alarm, including one already due but not delivered yet.
     if (date.getHours() === hour && date.getMinutes() === minute) {
       return existing.scheduledTime;
     }
@@ -692,18 +694,29 @@ async function scheduleCatchUpRetry() {
   });
 }
 
-async function getSignState() {
-  const { signState } = await chrome.storage.session.get("signState");
-  return signState || { active: false, signTabId: null, clicked: false, ready: false };
+async function getSignState(incognito = false) {
+  const key = incognito ? "signStateIncognito" : "signState";
+  const stored = await chrome.storage.session.get(key);
+  const state = stored[key];
+  return state && Boolean(state.incognito) === incognito
+    ? state
+    : { active: false, signTabId: null, clicked: false, ready: false, incognito };
 }
 
 async function setSignState(signState) {
-  await chrome.storage.session.set({ signState });
+  const key = signState.incognito ? "signStateIncognito" : "signState";
+  await chrome.storage.session.set({ [key]: signState });
+}
+
+async function getSignStateForTab(tabId) {
+  const states = await Promise.all([getSignState(false), getSignState(true)]);
+  return states.find((state) => tabId != null && state.signTabId === tabId)
+    || { active: false, signTabId: null };
 }
 
 async function isSignTab(tabId, site) {
   if (!tabId) return false;
-  const state = await getSignState();
+  const state = await getSignStateForTab(tabId);
   if (!state.active || state.finishing || state.signTabId !== tabId) return false;
   if (site && state.siteId && site !== state.siteId) return false;
   return true;
@@ -711,14 +724,14 @@ async function isSignTab(tabId, site) {
 
 async function isTabMarkedReady(tabId) {
   if (!tabId) return false;
-  const state = await getSignState();
+  const state = await getSignStateForTab(tabId);
   return Boolean(state.active && state.signTabId === tabId && state.ready);
 }
 
 async function waitForTabComplete(tabId, hostRe) {
   const matchHost = (url) => hostRe.test(url || "");
   const markReady = async () => {
-    const state = await getSignState();
+    const state = await getSignStateForTab(tabId);
     if (state.signTabId !== tabId || !state.active) return;
     await setSignState({ ...state, ready: true });
   };
@@ -755,7 +768,7 @@ async function waitForTabComplete(tabId, hostRe) {
 }
 
 async function claimClick(tabId) {
-  const state = await getSignState();
+  const state = await getSignStateForTab(tabId);
   if (!state.active || state.signTabId !== tabId || state.clicked) {
     return { ok: true, claimed: false };
   }
@@ -796,6 +809,20 @@ async function clickSignButton(tabId) {
   } catch (error) {
     return { ok: false, error: String(error) };
   }
+}
+
+async function claimApk502Retry(tabId) {
+  const state = await getSignStateForTab(tabId);
+  if (!tabId || !state.active || state.finishing || state.siteId !== "apktw" || state.signTabId !== tabId) {
+    return { retry: false, inactive: true };
+  }
+  const count = Number(state.apk502Retries || 0);
+  if (count >= 3) return { retry: false };
+  await setSignState({ ...state, apk502Retries: count + 1 });
+  await chrome.alarms.create(timeoutAlarmName(state.incognito), {
+    when: Date.now() + SIGN_TIMEOUT_MS
+  });
+  return { retry: true, attempt: count + 1 };
 }
 
 async function inspectBaha(tabId) {
@@ -854,25 +881,42 @@ async function clickBaha(tabId) {
   }
 }
 
+function klpbbsSignAction(click = false) {
+  const logout = document.querySelector("a[href*='member.php'][href*='action=logout'], a.logout[href*='action=logout']");
+  if (!logout) {
+    const login = document.querySelector("a[href*='action=login'], form[action*='action=login']");
+    return { status: login ? "login" : "pending", ok: false };
+  }
+
+  const card = document.getElementById("klp-signcard");
+  let button;
+  if (card) {
+    if (card.classList.contains("done") || /今日已[签簽]到/.test(card.textContent || "")) {
+      return { status: "already", ok: false };
+    }
+    button = card.querySelector("[data-klp-sign]");
+    if (!button || button.classList.contains("dis") || !button._klp) {
+      return { status: "pending", ok: false };
+    }
+  } else {
+    button = document.getElementById("JD_sign");
+    if (!button) return { status: "pending", ok: false };
+    const text = (button.textContent || "").replace(/\s+/g, "");
+    if (button.classList.contains("visted") || /已[签簽]到/.test(text)) {
+      return { status: "already", ok: false };
+    }
+  }
+  if (click) button.click();
+  return { status: "need", ok: true };
+}
+
 async function inspectKlpbbs(tabId) {
   if (!tabId) return { status: "pending" };
   try {
     const results = await chrome.scripting.executeScript({
       target: { tabId },
       world: "MAIN",
-      func: () => {
-        const logout = document.querySelector(
-          "a.logout[href*='action=logout'], a[href*='member.php'][href*='action=logout']"
-        );
-        if (!logout) return { status: "login" };
-        const button = document.getElementById("JD_sign");
-        if (!button) return { status: "pending" };
-        const text = (button.textContent || "").replace(/\s+/g, "");
-        if (button.classList.contains("visted") || /已签到/.test(text)) {
-          return { status: "already" };
-        }
-        return { status: "need" };
-      }
+      func: klpbbsSignAction
     });
     return results?.[0]?.result || { status: "pending" };
   } catch (_) {
@@ -886,18 +930,15 @@ async function clickKlpbbs(tabId) {
     const results = await chrome.scripting.executeScript({
       target: { tabId },
       world: "MAIN",
-      func: () => {
-        const button = document.getElementById("JD_sign");
-        if (!button || button.classList.contains("visted")) return { ok: false };
-        button.click();
-        return { ok: true };
-      }
+      func: klpbbsSignAction,
+      args: [true]
     });
     return results?.[0]?.result || { ok: false };
   } catch (error) {
     return { ok: false, error: String(error) };
   }
 }
+
 
 async function hookEyny(tabId) {
   if (!tabId) return { ok: false };
@@ -974,14 +1015,18 @@ async function inspectEyny(tabId) {
         if (!document.querySelector("#toptb, #nv, #um, #ct, .bm, #wp")) {
           return { status: "pending", reason: "loading" };
         }
-        const logout = document.querySelector("a[href*='action=logout']");
-        if (!logout) {
+        const logout = document.querySelector("#toptb a[href*='action=logout'], #um a[href*='action=logout']");
+        const account = document.querySelector(
+          "#toptb .vwmy a[href*='space-uid-'], #toptb .vwmy a[href*='mod=space'][href*='uid='], #um .vwmy a[href*='space-uid-'], #um .vwmy a[href*='mod=space'][href*='uid=']"
+        );
+        if (!logout || !textOf(account)) {
+          if (logout || account) return { status: "pending", reason: "auth" };
           if (
             /member\.php\?[^#]*action=login/i.test(location.href) ||
             /您需要先登錄|您需要先登入|您尚未登錄|您尚未登入|需要登錄後才能|需要登入後才能|請先登錄|請先登入|抱歉，您需要登錄/.test(
               pageText
             ) ||
-            document.querySelector("a[href*='action=login']")
+            document.querySelector("#toptb a[href*='action=login'], #um a[href*='action=login']")
           ) {
             return { status: "login" };
           }
@@ -1000,7 +1045,7 @@ async function inspectEyny(tabId) {
             break;
           }
         }
-        if (notice && (notice === "creditnotice" || noticeRe.test(notice))) {
+        if (notice && noticeRe.test(notice)) {
           return { status: "already", notice };
         }
         return { status: "ready" };
@@ -1048,6 +1093,56 @@ async function waitForKlpbbsDraw(tabId) {
   return { ok: false, reason: "timeout" };
 }
 
+function littleSkinSignAction(click = false) {
+  const visible = (el) => {
+    if (!el) return false;
+    const style = getComputedStyle(el);
+    return (
+      style.display !== "none" &&
+      style.visibility !== "hidden" &&
+      Number(style.opacity) > 0 &&
+      el.getClientRects().length > 0
+    );
+  };
+  const geetestState = () => {
+    const panel = document.querySelector(".geetest_panel");
+    if (!visible(panel)) return "none";
+    const loading = panel.querySelector(".geetest_panel_loading");
+    const success = panel.querySelector(".geetest_panel_success");
+    const box = panel.querySelector(".geetest_panel_box");
+    const text = panel.textContent || "";
+    if (visible(success) || /通过验证|通過驗證/.test(text)) return "passed";
+    if (visible(loading) || /智能验证|智能驗證|检测中|檢測中/.test(text)) return "checking";
+    if (
+      (box && /geetest_panelshowslide|geetest_panelshowclick/.test(box.className)) ||
+      panel.querySelector(
+        ".geetest_slider, .geetest_canvas_img, .geetest_item_wrap, .geetest_puzzle, .geetest_window"
+      )
+    ) {
+      return "need";
+    }
+    return "checking";
+  };
+  if (!window.blessing?.user?.uid || !document.getElementById("logout-button")) {
+    const login = /\/auth\/login(?:[/?#]|$)/.test(location.href) ||
+      document.querySelector('a[href$="/auth/login"], form[action*="/auth/login"]');
+    return { status: login ? "login" : "pending" };
+  }
+  if (geetestState() === "need") return { status: "captcha" };
+  const button = document.querySelector("#usage-box .card-footer button");
+  if (!button) return { status: "pending" };
+  const text = (button.textContent || "").replace(/\s+/g, "");
+  if (button.querySelector(".fa-spinner.fa-spin")) return { status: "pending" };
+  if (button.disabled && /在\d+(?:時|小時|小时|分鐘|分钟|分|秒)[后後]可用|availablein/i.test(text)) {
+    return { status: "already" };
+  }
+  if (/^(?:簽到|签到|signin)$/i.test(text) && !button.disabled) {
+    if (click) button.click();
+    return { status: "need", ok: true };
+  }
+  return { status: "pending" };
+}
+
 async function inspectLittleSkin(tabId) {
   if (!tabId) return { status: "pending" };
   try {
@@ -1055,52 +1150,7 @@ async function inspectLittleSkin(tabId) {
     const results = await chrome.scripting.executeScript({
       target: { tabId },
       world: "MAIN",
-      func: () => {
-        const visible = (el) => {
-          if (!el) return false;
-          const style = getComputedStyle(el);
-          return (
-            style.display !== "none" &&
-            style.visibility !== "hidden" &&
-            Number(style.opacity) > 0 &&
-            el.getClientRects().length > 0
-          );
-        };
-        const geetestState = () => {
-          const panel = document.querySelector(".geetest_panel");
-          if (!visible(panel)) return "none";
-          const loading = panel.querySelector(".geetest_panel_loading");
-          const success = panel.querySelector(".geetest_panel_success");
-          const box = panel.querySelector(".geetest_panel_box");
-          const text = panel.textContent || "";
-          if (visible(success) || /通过验证|通過驗證/.test(text)) return "passed";
-          if (visible(loading) || /智能验证|智能驗證|检测中|檢測中/.test(text)) return "checking";
-          if (
-            (box && /geetest_panelshowslide|geetest_panelshowclick/.test(box.className)) ||
-            panel.querySelector(
-              ".geetest_slider, .geetest_canvas_img, .geetest_item_wrap, .geetest_puzzle, .geetest_window"
-            )
-          ) {
-            return "need";
-          }
-          return "checking";
-        };
-        if (!window.blessing?.user?.uid || !document.getElementById("logout-button")) {
-          return { status: "login" };
-        }
-        if (geetestState() === "need") return { status: "captcha" };
-        const button = document.querySelector("#usage-box .card-footer button");
-        if (!button) return { status: "pending" };
-        const text = (button.textContent || "").replace(/\s+/g, "");
-        // LittleSkin first renders a disabled "簽到" button with a spinner.
-        // That is its loading state, not a completed sign-in.
-        if (button.querySelector(".fa-spinner.fa-spin")) return { status: "pending" };
-        if (/在\d+時后可用|在\d+小时后可用|available in/i.test(text)) {
-          return { status: "already" };
-        }
-        if (/簽到|签到|sign in/i.test(text) && !button.disabled) return { status: "need" };
-        return { status: "pending" };
-      }
+      func: littleSkinSignAction
     });
     return results?.[0]?.result || { status: "pending" };
   } catch (_) {
@@ -1140,12 +1190,8 @@ async function clickLittleSkin(tabId) {
     const results = await chrome.scripting.executeScript({
       target: { tabId },
       world: "MAIN",
-      func: () => {
-        const button = document.querySelector("#usage-box .card-footer button");
-        if (!button || button.disabled) return { ok: false };
-        button.click();
-        return { ok: true };
-      }
+      func: littleSkinSignAction,
+      args: [true]
     });
     return results?.[0]?.result || { ok: false };
   } catch (error) {
@@ -1181,8 +1227,8 @@ async function genshinApi(tabId, { action, lang = "zh-tw", actId }) {
   }
 }
 
-async function focusExistingSignTab() {
-  const state = await getSignState();
+async function focusExistingSignTab(incognito) {
+  const state = await getSignState(incognito);
   if (state.signTabId) {
     await focusTab(state.signTabId);
     return true;
@@ -1200,10 +1246,8 @@ async function getProfileWindowId(incognito) {
   }
 }
 
-async function finishSigningLock() {
-  signingLock = false;
-  const next = pendingSignIns.shift();
-  if (next) await startSignIn(next);
+async function finishSigningLock(incognito) {
+  signingLocks.delete(incognito);
 }
 
 async function startSignIn({
@@ -1212,20 +1256,18 @@ async function startSignIn({
   incognito = false,
   windowId = null
 } = {}) {
-  if (signingLock) {
-    const state = await getSignState();
-    if (Boolean(state.incognito) === Boolean(incognito)) {
-      await focusExistingSignTab();
-      return true;
-    }
-    if (!pendingSignIns.some((item) => Boolean(item.incognito) === Boolean(incognito))) {
-      pendingSignIns.push({ reason, force, incognito, windowId });
-    }
+  incognito = Boolean(incognito);
+  if (signingLocks.has(incognito)) {
+    await focusExistingSignTab(incognito);
     return true;
   }
-  signingLock = true;
+  signingLocks.add(incognito);
 
   try {
+    const running = await getSignState(incognito);
+    if (running.active && running.signTabId && await tabExists(running.signTabId)) {
+      return true;
+    }
     const settings = await getSettings({ incognito });
     let queue = SITE_ORDER.filter((id) => settings.sites[id].enabled);
     if (reason === "retry") {
@@ -1237,7 +1279,7 @@ async function startSignIn({
     }
     if (!queue.length) {
       if (reason === "retry") await clearRetry(incognito);
-      await finishSigningLock();
+      await finishSigningLock(incognito);
       return false;
     }
 
@@ -1249,12 +1291,12 @@ async function startSignIn({
             when: Date.now() + RETRY_MS
           });
         }
-        await finishSigningLock();
+        await finishSigningLock(incognito);
         return false;
       }
     }
 
-    const existing = await getSignState();
+    const existing = await getSignState(incognito);
     const leftoverId = existing.signTabId;
     if (leftoverId) {
       await setSignState({
@@ -1268,7 +1310,6 @@ async function startSignIn({
         try {
           await chrome.tabs.remove(leftoverId);
         } catch (_) {
-          /* ignore */
         }
       }
     }
@@ -1287,7 +1328,7 @@ async function startSignIn({
       incognito,
       windowId
     });
-    await openNextSite();
+    await openNextSite(incognito);
     return true;
   } catch (error) {
     const message = t("msgOpenTabFailed", [String(error.message || error)]);
@@ -1299,7 +1340,7 @@ async function startSignIn({
       incognito,
       windowId
     });
-    await recordSiteResult(null, "error", message, false);
+    await recordSiteResult(null, "error", message, false, incognito);
     if (isLoginFailure(error.message || error)) {
       await clearRetry(incognito);
     } else {
@@ -1310,14 +1351,14 @@ async function startSignIn({
     }
     await syncLoginBadge();
     await notify("resultError", "notifyOpenTabFailed", "", { sticky: true });
-    await finishSigningLock();
+    await finishSigningLock(incognito);
     if (reason === "manual") throw error;
     return false;
   }
 }
 
-async function openNextSite() {
-  const state = await getSignState();
+async function openNextSite(incognito = false) {
+  const state = await getSignState(incognito);
   const siteId = state.queue?.[0];
   if (!siteId) {
     await applyQueueBadge(state.results || [], state.incognito);
@@ -1330,7 +1371,7 @@ async function openNextSite() {
       results: state.results || []
     });
     await maybeRetryAfterRun(state);
-    await finishSigningLock();
+    await finishSigningLock(incognito);
     return;
   }
 
@@ -1346,7 +1387,7 @@ async function openNextSite() {
     tab = await chrome.tabs.create(createOptions);
   } catch (error) {
     const message = t("msgOpenTabFailed", [String(error.message || error)]);
-    await recordSiteResult(siteId, "error", message, false);
+    await recordSiteResult(siteId, "error", message, false, incognito);
     const results = [...(state.results || []), { siteId, status: "error", message }];
     await setSignState({
       ...state,
@@ -1358,13 +1399,14 @@ async function openNextSite() {
     });
     await applyQueueBadge(results, state.incognito);
     await scheduleRetry(message, Boolean(state.incognito));
-    await finishSigningLock();
+    await finishSigningLock(incognito);
     return;
   }
   await setSignState({
     ...state,
     active: true,
     signTabId: tab.id,
+    apk502Retries: 0,
     clicked: false,
     ready: false,
     finishing: false,
@@ -1372,15 +1414,15 @@ async function openNextSite() {
     queue: remaining,
     results: state.results || []
   });
-  await chrome.alarms.clear(TIMEOUT_ALARM);
-  await chrome.alarms.create(TIMEOUT_ALARM, {
+  await chrome.alarms.clear(timeoutAlarmName(incognito));
+  await chrome.alarms.create(timeoutAlarmName(incognito), {
     when: Date.now() + SIGN_TIMEOUT_MS
   });
   await waitForTabComplete(tab.id, site.hostRe);
 }
 
-async function timeoutSignIn() {
-  const state = await getSignState();
+async function timeoutSignIn(incognito = false) {
+  const state = await getSignState(incognito);
   if (!state.active) return;
   const detected = await detectTabSignStatus(state.signTabId);
   const status =
@@ -1439,10 +1481,9 @@ async function detectTabSignStatus(tabId) {
   if (!tabId) return null;
   try {
     const tab = await chrome.tabs.get(tabId);
-    const state = await getSignState();
+    const state = await getSignStateForTab(tabId);
     if (isLoginUrl(tab.url || "", state.siteId)) return "login";
   } catch (_) {
-    /* tab may already be gone */
   }
   try {
     const reply = await chrome.tabs.sendMessage(tabId, { type: "flushStatus" });
@@ -1450,9 +1491,8 @@ async function detectTabSignStatus(tabId) {
       return reply.status;
     }
   } catch (_) {
-    /* content script may not be listening */
   }
-  const state = await getSignState();
+  const state = await getSignStateForTab(tabId);
   if (state.siteId === "baha") {
     const info = await inspectBaha(tabId);
     if (info.status === "already" || info.status === "login") return info.status;
@@ -1517,41 +1557,30 @@ async function onSignResult(payload, tabId) {
     status = "success";
     message = t("msgSuccess");
   }
-  const state = await getSignState();
-  if (state.finishing) return;
+  const state = await getSignStateForTab(tabId);
+  if (!state.signTabId || state.finishing) return;
   if (tabId && state.signTabId && tabId !== state.signTabId) return;
   const siteId = payload.site || state.siteId || "apktw";
   const isManagedTab = tabId ? tabId === state.signTabId : Boolean(state.active);
   if (!state.active && status !== "success") return;
   await setSignState({ ...state, finishing: true });
 
-  let keepOpen = false;
   if (status === "success" && siteId === "klpbbs" && payload.drawKlpbbs) {
-    const drawn = await drawKlpbbsThread(tabId || state.signTabId);
-    const completed = drawn.ok && (await waitForKlpbbsDraw(tabId || state.signTabId));
-    if (!completed?.ok) {
-      keepOpen = true;
-      message = t("msgKlpbbsDrawFailed");
+    try {
+      const drawn = await drawKlpbbsThread(tabId || state.signTabId);
+      if (drawn.ok) await waitForKlpbbsDraw(tabId || state.signTabId);
+    } catch (_) {
     }
   }
 
   const siteLabel = t(SITES[siteId]?.nameKey || "siteApkTw");
   const markToday = status === "success";
-  await recordSiteResult(siteId, status, message, markToday);
+  await recordSiteResult(siteId, status, message, markToday, Boolean(state.incognito));
+  await syncLoginBadge();
 
   if (status === "success") {
-    await notify(
-      keepOpen ? "resultError" : "resultSuccess",
-      keepOpen ? "notifyErrorBody" : "notifySuccessBody",
-      `${siteLabel}｜${message}`,
-      { sticky: keepOpen }
-    );
-    if (isManagedTab && !keepOpen) {
-      await closeManagedTabs(state.signTabId);
-    } else if (keepOpen) {
-      await focusTab(tabId || state.signTabId);
-      await detachCurrentTab(state);
-    }
+    await notify("resultSuccess", "notifySuccessBody", `${siteLabel}｜${message}`);
+    if (isManagedTab) await closeManagedTabs(state.signTabId);
   } else if (status === "captcha") {
     await notify("resultCaptcha", "notifyCaptchaBody", `${siteLabel}｜${message || t("msgCaptchaKept")}`, { sticky: true });
     await focusTab(tabId);
@@ -1571,12 +1600,12 @@ async function onSignResult(payload, tabId) {
     }
   }
 
-  await chrome.alarms.clear(TIMEOUT_ALARM);
-  const latest = await getSignState();
+  await chrome.alarms.clear(timeoutAlarmName(state.incognito));
+  const latest = await getSignState(Boolean(state.incognito));
   const results = [...(latest.results || []), { siteId, status, message, tabId: tabId || null }];
   await setSignState({ ...latest, results, active: false, clicked: true });
-  signingLock = true;
-  await openNextSite();
+  signingLocks.add(Boolean(state.incognito));
+  await openNextSite(Boolean(state.incognito));
 }
 
 async function showLoginHudOnTab(tabId) {
@@ -1587,7 +1616,6 @@ async function showLoginHudOnTab(tabId) {
       files: ["overlay.css"]
     });
   } catch (_) {
-    /* css may already be injected */
   }
   try {
     await chrome.scripting.executeScript({
@@ -1601,7 +1629,6 @@ async function showLoginHudOnTab(tabId) {
       }
     });
   } catch (_) {
-    /* tab may already be gone */
   }
 }
 
@@ -1615,13 +1642,12 @@ async function detachCurrentTab(state) {
 }
 
 async function closeManagedTabs(tabId) {
-  const state = await getSignState();
+  const state = await getSignStateForTab(tabId);
   await setSignState({ ...state, active: false, signTabId: null, clicked: true });
   if (!tabId) return;
   try {
     await chrome.tabs.remove(tabId);
   } catch (_) {
-    /* already closed */
   }
 }
 
@@ -1630,7 +1656,6 @@ async function focusTab(tabId) {
   try {
     await chrome.tabs.update(tabId, { active: true });
   } catch (_) {
-    /* ignore */
   }
 }
 
@@ -1644,14 +1669,13 @@ async function tabExists(tabId) {
   }
 }
 
-async function recordSiteResult(siteId, status, message, markToday) {
+async function recordSiteResult(siteId, status, message, markToday, incognito = false) {
   const patch = {
     lastResult: status,
     lastResultAt: new Date().toISOString(),
     lastMessage: message
   };
   if (markToday) patch.lastSignDate = todayKey();
-  const { incognito } = await getSignState();
   if (incognito) {
     if (!siteId) return;
     const settings = await getSettings({ incognito: true });
@@ -1675,13 +1699,7 @@ async function recordSiteResult(siteId, status, message, markToday) {
   await chrome.storage.local.set({ sites });
 }
 
-async function applyQueueBadge(results, _incognito = false) {
-  const list = results || [];
-  for (const item of list) {
-    if (item.status === "login" && item.tabId) {
-      await showLoginHudOnTab(item.tabId);
-    }
-  }
+async function applyQueueBadge() {
   await syncLoginBadge();
 }
 
@@ -1690,7 +1708,7 @@ function siteNeedsAttention(settings) {
     (id) =>
       settings.sites[id]?.enabled === true &&
       Boolean(settings.sites[id]?.lastResult) &&
-      settings.sites[id]?.lastResult !== "success"
+      !["success", "already"].includes(settings.sites[id]?.lastResult)
   );
 }
 
@@ -1713,24 +1731,34 @@ async function setTabLoginBadge(tabId, show) {
     }
     await chrome.action.setBadgeText({ text: "", tabId });
   } catch (_) {
-    /* tab may already be gone */
   }
 }
 
-async function applyLoginBadgeToTab(tab) {
-  if (tab?.id == null) return;
-  const flags = await loginFailureFlags();
-  await setTabLoginBadge(tab.id, tab.incognito ? flags.incognito : flags.normal);
+let badgeUpdateQueue = Promise.resolve();
+
+function enqueueBadgeUpdate(update) {
+  const pending = badgeUpdateQueue.then(update);
+  badgeUpdateQueue = pending.catch(() => {});
+  return pending;
 }
 
-async function syncLoginBadge() {
+function applyLoginBadgeToTab(tab) {
+  if (tab?.id == null) return Promise.resolve();
+  return enqueueBadgeUpdate(async () => {
+    const flags = await loginFailureFlags();
+    await setTabLoginBadge(tab.id, tab.incognito ? flags.incognito : flags.normal);
+  });
+}
+
+function syncLoginBadge() {
+  return enqueueBadgeUpdate(refreshLoginBadges);
+}
+
+async function refreshLoginBadges() {
   const flags = await loginFailureFlags();
   try {
-    // The default badge is shared by normal and incognito windows. Keep it
-    // empty and use tab-specific badges below so the two profiles do not leak.
     await chrome.action.setBadgeText({ text: "" });
   } catch (_) {
-    /* ignore */
   }
   let tabs = [];
   try {
@@ -1758,7 +1786,6 @@ async function setActionTooltip(titleKey, message) {
   try {
     await chrome.action.setTitle({ title: text });
   } catch (_) {
-    /* ignore */
   }
 }
 

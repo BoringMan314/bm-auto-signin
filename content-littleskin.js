@@ -57,6 +57,11 @@
       await report("already", t("msgAlready"));
       return;
     }
+    if (initial.status === "captcha") {
+      const result = await watchResult();
+      await report(result.status, result.message);
+      return;
+    }
 
     const claimed = await send({ type: "claimClick" });
     if (!claimed?.claimed) {
@@ -65,6 +70,15 @@
       return;
     }
     const clicked = await send({ type: "littleskinSign" });
+    if (clicked?.status === "already" || clicked?.status === "login") {
+      await report(clicked.status, t(clicked.status === "already" ? "msgAlready" : "msgNeedLoginLittleSkin"));
+      return;
+    }
+    if (clicked?.status === "captcha" || clicked?.status === "pending") {
+      const result = await watchResult();
+      await report(result.status, result.message);
+      return;
+    }
     if (!clicked?.ok) {
       await report("error", t("msgLittleSkinNoButton"));
       return;

@@ -1,0 +1,17 @@
+{
+  "new": {
+    "klp-signcard": {
+      "className": "k-card klp-signcard done"
+    },
+    "logout": true,
+    "JD_sign": {
+      "className": "midaben_signpanel JD_sign visted"
+    }
+  },
+  "old": {
+    "logout": true,
+    "JD_sign": {
+      "className": "midaben_signpanel JD_sign visted"
+    }
+  }
+}

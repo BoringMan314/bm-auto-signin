@@ -76,14 +76,14 @@
 
   async function runSignIn() {
     if (isCloudflare502()) {
-      await report("error", t("msgApkTw502"), { closeTab: true });
+      await handle502();
       return;
     }
 
     await waitUntilPageOpened();
 
     if (isCloudflare502()) {
-      await report("error", t("msgApkTw502"), { closeTab: true });
+      await handle502();
       return;
     }
 
@@ -190,6 +190,18 @@
     return /wb\.gif/i.test(src);
   }
 
+  async function handle502() {
+    const reply = await send({ type: "apk502Retry" });
+    if (reply?.inactive) return;
+    if (reply?.retry) {
+      await delay(10000);
+      const allowed = await send({ type: "shouldAutoSign", site: "apktw" });
+      if (allowed?.shouldSign) location.reload();
+      return;
+    }
+    await report("error", t("msgApkTw502"), { closeTab: true });
+  }
+
   function isCloudflare502() {
     if (!document.querySelector("#cf-wrapper")) return false;
     const titleMatches = /\b502:\s*Bad gateway\b/i.test(document.title || "");
@@ -228,7 +240,6 @@
     try {
       el.scrollIntoView({ block: "center", inline: "center" });
     } catch (_) {
-      /* ignore */
     }
     const reply = await send({ type: "clickSignButton" });
     if (reply?.ok) return;
