@@ -146,7 +146,8 @@ git commit -m "docs: 更新內容說明與商店連結"
 git push origin main
 ```
 
-### Chrome 線上應用程式商店：上架欄位草稿
+<details>
+<summary>Chrome 線上應用程式商店：上架欄位草稿</summary>
 
 於 [Chrome Web Store 開發人員控制台](https://chrome.google.com/webstore/devconsole) 建立項目時，可直接貼上：
 
@@ -202,6 +203,8 @@ git push origin main
 | 小型宣傳圖 | [`screenshot/screenshot_440x280.png`](screenshot/screenshot_440x280.png) | 440×280 |
 | 大型宣傳圖 | [`screenshot/screenshot_1400x560.png`](screenshot/screenshot_1400x560.png) | 1400×560 |
 | 圖示 | [`icons/icon128.png`](icons/icon128.png) | 128×128（套件內） |
+
+</details>
 
 ### 更新至 Chrome 線上應用程式商店
 
