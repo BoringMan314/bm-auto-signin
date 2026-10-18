@@ -106,7 +106,7 @@
       return;
     }
     if (!found) {
-      await report("error", t("msgNoButton"));
+      await report("error", t("msgApkTwNoButton"));
       return;
     }
 
@@ -116,7 +116,7 @@
       return;
     }
     if (!canClickSign(button)) {
-      await report("error", t("msgNoButton"));
+      await report("error", t("msgApkTwNoButton"));
       return;
     }
 

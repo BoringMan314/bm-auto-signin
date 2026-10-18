@@ -63,7 +63,7 @@
   "notifyErrorBody": { "message": "请检查分页内容。分页已保留。" },
   "msgNeedLogin": { "message": "尚未登录 APK.TW，请先手动登录。" },
   "msgNoButtonAlready": { "message": "找不到签到按钮，判定签到成功。" },
-  "msgNoButton": { "message": "找不到签到按钮 (#my_amupper)，请确认页面是否正常载入。" },
+  "msgApkTwNoButton": { "message": "找不到 APK.TW 签到按钮，请确认页面是否正常载入。" },
   "msgAlready": { "message": "签到成功。" },
   "msgSuccess": { "message": "签到成功。" },
   "msgNeedCaptcha": { "message": "签到需要验证码。" },

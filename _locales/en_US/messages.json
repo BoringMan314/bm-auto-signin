@@ -63,7 +63,7 @@
   "notifyErrorBody": { "message": "Check the tab contents. The tab was kept open." },
   "msgNeedLogin": { "message": "Not logged in to APK.TW. Please log in first." },
   "msgNoButtonAlready": { "message": "Sign-in button not found; treated as signed in." },
-  "msgNoButton": { "message": "Sign-in button (#my_amupper) not found. Check that the page loaded correctly." },
+  "msgApkTwNoButton": { "message": "APK.TW sign-in button was not found. Check that the page loaded correctly." },
   "msgAlready": { "message": "Signed in successfully." },
   "msgSuccess": { "message": "Signed in successfully." },
   "msgNeedCaptcha": { "message": "A captcha is required to sign in." },

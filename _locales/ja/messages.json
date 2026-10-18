@@ -32,6 +32,7 @@
   "msgNeedLoginKlpbbs": { "message": "苦力怕フォーラムにログインしていません。先にログインしてください。" },
   "msgNeedLoginLittleSkin": { "message": "LittleSkin にログインしていません。先にログインしてください。" },
   "msgNeedLoginEyny": { "message": "伊莉討論區にログインしていません。先にログインしてください。" },
+  "msgApkTwNoButton": { "message": "APK.TW のサインインボタンが見つかりません。ページが正しく読み込まれたか確認してください。" },
   "msgEynyNoButton": { "message": "EYNY のサインイン画面が見つかりません。ページが正しく読み込まれたか確認してください。" },
   "msgBahaNoApi": { "message": "バハムートのサインイン画面が見つかりません。ページが正しく読み込まれたか確認してください。" },
   "msgGenshinApi": { "message": "原神のサインイン状態を取得できません。HoYoLAB のページが正しく読み込まれたか確認してください。" },
@@ -63,7 +64,6 @@
   "notifyErrorBody": { "message": "タブの内容を確認してください。タブは開いたままです。" },
   "msgNeedLogin": { "message": "APK.TW にログインしていません。先にログインしてください。" },
   "msgNoButtonAlready": { "message": "サインインボタンが見つからないため、サインイン成功と判定しました。" },
-  "msgNoButton": { "message": "サインインボタン (#my_amupper) が見つかりません。ページが正しく読み込まれたか確認してください。" },
   "msgAlready": { "message": "サインインに成功しました。" },
   "msgSuccess": { "message": "サインインに成功しました。" },
   "msgNeedCaptcha": { "message": "サインインには認証コードが必要です。" },
@@ -72,6 +72,7 @@
   "msgUnconfirmed": { "message": "サインインをクリックしましたが、結果を確認できませんでした。" },
   "msgLogin": { "message": "APK.TW にログインしていません。" },
   "msgFailed": { "message": "サインインに失敗しました。" },
+  "msgApkTw502": { "message": "APK.TW が Cloudflare 502 を返しました。タブを閉じ、再試行を予約しました。" },
   "msgTimeoutKept": { "message": "サインインがタイムアウトしました。タブは開いたままです。" },
   "msgCaptchaKept": { "message": "認証コードが必要です。タブは開いたままです。" },
   "msgOpenTabFailed": {

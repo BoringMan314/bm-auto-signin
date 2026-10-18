@@ -63,7 +63,7 @@
   "notifyErrorBody": { "message": "請檢查分頁內容。分頁已保留。" },
   "msgNeedLogin": { "message": "尚未登入 APK.TW，請先手動登入。" },
   "msgNoButtonAlready": { "message": "找不到簽到按鈕，判定簽到成功。" },
-  "msgNoButton": { "message": "找不到簽到按鈕 (#my_amupper)，請確認頁面是否正常載入。" },
+  "msgApkTwNoButton": { "message": "找不到 APK.TW 簽到按鈕，請確認頁面是否正常載入。" },
   "msgAlready": { "message": "簽到成功。" },
   "msgSuccess": { "message": "簽到成功。" },
   "msgNeedCaptcha": { "message": "簽到需要驗證碼。" },
