@@ -2,6 +2,7 @@ const SITE_ORDER = ["baha", "apktw", "eyny", "genshin", "klpbbs", "littleskin"];
 const signTimeEl = document.getElementById("signTime");
 const nextAlarmEl = document.getElementById("nextAlarm");
 const toastEl = document.getElementById("toast");
+const TOAST_DURATION_MS = 3000;
 let toastTimer = null;
 const EXT_NAME = `[B.M] ${t("extNameSuffix")}`;
 
@@ -20,6 +21,7 @@ document.getElementById("extTitle").textContent = EXT_NAME;
 document.getElementById("extName").textContent = EXT_NAME;
 document.getElementById("save").addEventListener("click", () => saveSettings());
 document.getElementById("signNow").addEventListener("click", signNow);
+document.getElementById("signMakeup").addEventListener("click", signMakeup);
 SITE_ORDER.forEach((id) => {
   document.getElementById(`enabled-${id}`).addEventListener("change", () => saveSettings({ silent: true }));
 });
@@ -99,7 +101,7 @@ async function saveSettings({ silent = false } = {}) {
     return;
   }
   render(reply);
-  if (!silent) showToast(t("saved"), false, 3000);
+  if (!silent) showToast(t("saved"));
 }
 
 async function signNow() {
@@ -111,6 +113,29 @@ async function signNow() {
     await saveSettings();
     const reply = await chrome.runtime.sendMessage({
       type: "signNow",
+      ...(await popupContext())
+    });
+    if (!reply?.ok) {
+      button.disabled = false;
+      showToast(reply?.error || t("cannotStart"), true);
+      return;
+    }
+    window.close();
+  } catch (error) {
+    button.disabled = false;
+    showToast(error.message || t("cannotStart"), true);
+  }
+}
+
+async function signMakeup() {
+  const button = document.getElementById("signMakeup");
+  if (button.disabled) return;
+  button.disabled = true;
+  showToast(t("signingNow"));
+  try {
+    await saveSettings({ silent: true });
+    const reply = await chrome.runtime.sendMessage({
+      type: "signMakeup",
       ...(await popupContext())
     });
     if (!reply?.ok) {
@@ -155,7 +180,7 @@ function pad(value) {
   return String(value).padStart(2, "0");
 }
 
-function showToast(text, isError = false, hideAfterMs = 0) {
+function showToast(text, isError = false) {
   toastEl.hidden = false;
   toastEl.textContent = text;
   toastEl.classList.toggle("error", Boolean(isError));
@@ -163,10 +188,8 @@ function showToast(text, isError = false, hideAfterMs = 0) {
     clearTimeout(toastTimer);
     toastTimer = null;
   }
-  if (hideAfterMs > 0) {
-    toastTimer = setTimeout(() => {
-      toastEl.hidden = true;
-      toastTimer = null;
-    }, hideAfterMs);
-  }
+  toastTimer = setTimeout(() => {
+    toastEl.hidden = true;
+    toastTimer = null;
+  }, TOAST_DURATION_MS);
 }

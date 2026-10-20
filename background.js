@@ -229,6 +229,18 @@ async function handleMessage(message, sender) {
       });
       return started ? { ok: true } : { ok: false, error: t("cannotStart") };
     }
+    case "signMakeup": {
+      const incognito = Boolean(message.incognito);
+      const settings = await getSettings({ incognito });
+      const hasUnsignedSites = SITE_ORDER.some((id) => isNotSignedToday(settings.sites[id]));
+      if (!hasUnsignedSites) return { ok: false, error: t("noMakeupNeeded") };
+      const started = await startSignIn({
+        reason: "make-up",
+        incognito,
+        windowId: message.windowId || null
+      });
+      return started ? { ok: true } : { ok: false, error: t("cannotStart") };
+    }
     case "shouldAutoSign":
       return { ok: true, shouldSign: await isSignTab(sender.tab?.id, message.site) };
     case "isTabReady":
@@ -657,6 +669,10 @@ function isCatchUpDueSite(site) {
     if (todayKey(resultDate) === todayKey()) return false;
   }
   return true;
+}
+
+function isNotSignedToday(site) {
+  return Boolean(site?.enabled) && site.lastSignDate !== todayKey();
 }
 
 function delay(ms) {
@@ -1274,6 +1290,8 @@ async function startSignIn({
       queue = queue.filter((id) => isRetryableSite(settings.sites[id]));
     } else if (reason === "catch-up" && !force) {
       queue = queue.filter((id) => isCatchUpDueSite(settings.sites[id]));
+    } else if (reason === "make-up") {
+      queue = queue.filter((id) => isNotSignedToday(settings.sites[id]));
     } else if (!force && reason !== "manual") {
       queue = queue.filter((id) => settings.sites[id].lastSignDate !== todayKey());
     }
