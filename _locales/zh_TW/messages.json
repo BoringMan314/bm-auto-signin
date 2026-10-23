@@ -38,7 +38,7 @@
   "msgKlpbbsNoButton": { "message": "找不到苦力怕論壇簽到按鈕，請確認頁面是否正常載入。" },
   "msgKlpbbsDrawFailed": { "message": "簽到成功，但無法確認抽帖頁面已開啟；分頁已保留。" },
   "msgLittleSkinNoButton": { "message": "找不到 LittleSkin 簽到按鈕，請確認頁面是否正常載入。" },
-  "msgLittleSkinCaptcha": { "message": "LittleSkin 簽到需要完成滑動驗證，分頁已保留。" },
+  "msgLittleSkinCaptcha": { "message": "已點擊簽到，等待手動驗證。分頁已保留。" },
   "signNow": { "message": "立即簽到" },
   "signMakeup": { "message": "補簽" },
   "save": { "message": "儲存設定" },

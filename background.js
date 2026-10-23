@@ -1126,17 +1126,16 @@ function littleSkinSignAction(click = false) {
     const loading = panel.querySelector(".geetest_panel_loading");
     const success = panel.querySelector(".geetest_panel_success");
     const box = panel.querySelector(".geetest_panel_box");
-    const text = panel.textContent || "";
+    const text = panel.innerText || "";
     if (visible(success) || /通过验证|通過驗證/.test(text)) return "passed";
-    if (visible(loading) || /智能验证|智能驗證|检测中|檢測中/.test(text)) return "checking";
     if (
-      (box && /geetest_panelshowslide|geetest_panelshowclick/.test(box.className)) ||
-      panel.querySelector(
-        ".geetest_slider, .geetest_canvas_img, .geetest_item_wrap, .geetest_puzzle, .geetest_window"
-      )
+      (visible(box) && /geetest_panelshowslide|geetest_panelshowclick/.test(box.className)) ||
+      [".geetest_slider", ".geetest_canvas_img", ".geetest_item_wrap", ".geetest_puzzle", ".geetest_window"]
+        .some((selector) => visible(panel.querySelector(selector)))
     ) {
       return "need";
     }
+    if (visible(loading) || /智能验证|智能驗證|检测中|檢測中/.test(text)) return "checking";
     return "checking";
   };
   if (!window.blessing?.user?.uid || !document.getElementById("logout-button")) {
