@@ -1345,6 +1345,9 @@ async function startSignIn({
       incognito,
       windowId
     });
+    for (const siteId of queue) {
+      await recordSiteResult(siteId, "pending", "", false, incognito);
+    }
     await openNextSite(incognito);
     return true;
   } catch (error) {

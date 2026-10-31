@@ -134,7 +134,12 @@ small {
   overflow: hidden;
 }
 
-.site-result.is-login {
+.site-result-status,
+.site-result-separator {
+  color: var(--muted);
+}
+
+.site-result-detail.is-error {
   color: var(--danger);
 }
 

@@ -51,6 +51,7 @@
   "noMakeupNeeded": { "message": "サインインが未完了の有効なサイトはありません。" },
   "disabled": { "message": "無効" },
   "notScheduled": { "message": "未スケジュール" },
+  "resultPending": { "message": "未サインイン（実行中または再試行待ち）" },
   "resultSuccess": { "message": "サインイン成功" },
   "resultAlready": { "message": "サインイン成功" },
   "resultCaptcha": { "message": "認証コードが必要です" },

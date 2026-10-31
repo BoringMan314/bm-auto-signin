@@ -7,6 +7,7 @@ let toastTimer = null;
 const EXT_NAME = `[B.M] ${t("extNameSuffix")}`;
 
 const RESULT_KEYS = {
+  pending: "resultPending",
   success: "resultSuccess",
   already: "resultSuccess",
   captcha: "resultCaptcha",
@@ -74,8 +75,7 @@ function render(reply) {
     const site = sites[id] || {};
     document.getElementById(`enabled-${id}`).checked = site.enabled === true;
     const resultEl = document.getElementById(`result-${id}`);
-    resultEl.textContent = formatLastResult(site);
-    resultEl.classList.toggle("is-login", site.lastResult === "login");
+    renderLastResult(resultEl, site);
   });
 }
 
@@ -157,17 +157,39 @@ function formatNextAlarm(timestamp, enabled) {
   return `${date.getMonth() + 1}/${date.getDate()} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
 }
 
-function formatLastResult(settings) {
-  if (!settings?.lastResult) return t("noRecord");
+function renderLastResult(element, settings) {
+  element.replaceChildren();
+  if (!settings?.lastResult) {
+    element.textContent = t("noRecord");
+    return;
+  }
   const key = RESULT_KEYS[settings.lastResult];
   const label = key ? t(key) : settings.lastResult;
   const time = settings.lastResultAt ? formatClock(settings.lastResultAt) : "";
+  const status = document.createElement("span");
+  status.className = "site-result-status";
+  status.textContent = `${label}${time ? `（${time}）` : ""}`;
+  element.append(status);
+
   const detail =
     settings.lastResult === "login"
       ? t("popupLoginDetail")
       : settings.lastMessage || "";
-  const message = detail ? `｜${detail}` : "";
-  return `${label}${time ? `（${time}）` : ""}${message}`;
+  if (!detail) return;
+
+  const separator = document.createElement("span");
+  separator.className = "site-result-separator";
+  separator.textContent = "｜";
+  element.append(separator);
+
+  const detailText = document.createElement("span");
+  detailText.className = "site-result-detail";
+  detailText.textContent = detail;
+  detailText.classList.toggle(
+    "is-error",
+    ["login", "captcha", "timeout", "error"].includes(settings.lastResult)
+  );
+  element.append(detailText);
 }
 
 function formatClock(iso) {

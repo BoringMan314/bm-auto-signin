@@ -50,6 +50,7 @@
   "noMakeupNeeded": { "message": "No enabled sites are waiting for a successful sign-in." },
   "disabled": { "message": "Disabled" },
   "notScheduled": { "message": "Not scheduled" },
+  "resultPending": { "message": "Not signed in (running or waiting to retry)" },
   "resultSuccess": { "message": "Signed in" },
   "resultAlready": { "message": "Signed in" },
   "resultCaptcha": { "message": "Captcha required" },
