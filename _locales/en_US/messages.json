@@ -51,6 +51,7 @@
   "disabled": { "message": "Disabled" },
   "notScheduled": { "message": "Not scheduled" },
   "resultPending": { "message": "Not signed in (running or waiting to retry)" },
+  "resultNotSignedToday": { "message": "Not signed in today." },
   "resultSuccess": { "message": "Signed in" },
   "resultAlready": { "message": "Signed in" },
   "resultCaptcha": { "message": "Captcha required" },

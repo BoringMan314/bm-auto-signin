@@ -51,6 +51,7 @@
   "disabled": { "message": "已停用" },
   "notScheduled": { "message": "尚未排程" },
   "resultPending": { "message": "尚未簽到（執行中或等待重試）" },
+  "resultNotSignedToday": { "message": "尚未簽到。" },
   "resultSuccess": { "message": "簽到成功" },
   "resultAlready": { "message": "簽到成功" },
   "resultCaptcha": { "message": "需要驗證碼" },

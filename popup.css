@@ -139,6 +139,10 @@ small {
   color: var(--muted);
 }
 
+.site-result-status.is-error {
+  color: var(--danger);
+}
+
 .site-result-detail.is-error {
   color: var(--danger);
 }

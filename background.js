@@ -65,6 +65,7 @@ function emptySiteState(enabled = true) {
     lastSignDate: "",
     lastResult: "",
     lastResultAt: "",
+    lastSuccessAt: "",
     lastMessage: ""
   };
 }
@@ -311,6 +312,7 @@ function resultSnapshot(site) {
     lastSignDate: site?.lastSignDate || "",
     lastResult: site?.lastResult || "",
     lastResultAt: site?.lastResultAt || "",
+    lastSuccessAt: site?.lastSuccessAt || "",
     lastMessage: site?.lastMessage || ""
   };
 }
@@ -409,6 +411,7 @@ function mergeSites(stored) {
   if (!stored?.sites && stored?.lastResult) {
     sites.apktw.lastResult = stored.lastResult || "";
     sites.apktw.lastResultAt = stored.lastResultAt || "";
+    sites.apktw.lastSuccessAt = stored.lastSuccessAt || "";
     sites.apktw.lastMessage = stored.lastMessage || "";
     sites.apktw.lastSignDate = stored.lastSignDate || "";
   }
@@ -421,6 +424,7 @@ function resetSignJudgment(site) {
     lastSignDate: "",
     lastResult: "",
     lastResultAt: "",
+    lastSuccessAt: "",
     lastMessage: ""
   };
 }
@@ -1606,8 +1610,11 @@ async function onSignResult(payload, tabId) {
     await focusTab(tabId);
     await detachCurrentTab(state);
   } else if (status === "login") {
-    await showLoginHudOnTab(tabId);
     await detachCurrentTab(state);
+    if (siteId === "eyny") {
+      await navigateEynyToLogin(tabId);
+    }
+    await showLoginHudOnTab(tabId);
   } else if (status === "timeout") {
     await notify("resultTimeout", "notifyTimeoutBody", `${siteLabel}｜${message || t("msgTimeoutKept")}`, { sticky: true });
     await detachCurrentTab(state);
@@ -1652,6 +1659,33 @@ async function showLoginHudOnTab(tabId) {
   }
 }
 
+async function navigateEynyToLogin(tabId) {
+  if (!tabId) return;
+  try {
+    const tab = await chrome.tabs.get(tabId);
+    const origin = new URL(tab.url || SITES.eyny.url).origin;
+    const loaded = new Promise((resolve) => {
+      const onUpdated = (updatedTabId, info) => {
+        if (updatedTabId !== tabId || info.status !== "complete") return;
+        chrome.tabs.onUpdated.removeListener(onUpdated);
+        clearTimeout(timeout);
+        resolve();
+      };
+      const timeout = setTimeout(() => {
+        chrome.tabs.onUpdated.removeListener(onUpdated);
+        resolve();
+      }, 15000);
+      chrome.tabs.onUpdated.addListener(onUpdated);
+    });
+    await chrome.tabs.update(tabId, {
+      active: true,
+      url: `${origin}/member.php?mod=logging&action=login`
+    });
+    await loaded;
+  } catch (_) {
+  }
+}
+
 async function detachCurrentTab(state) {
   await setSignState({
     ...state,
@@ -1690,16 +1724,21 @@ async function tabExists(tabId) {
 }
 
 async function recordSiteResult(siteId, status, message, markToday, incognito = false) {
+  const resultAt = new Date().toISOString();
   const patch = {
     lastResult: status,
-    lastResultAt: new Date().toISOString(),
+    lastResultAt: resultAt,
     lastMessage: message
   };
   if (markToday) patch.lastSignDate = todayKey();
+  if (status === "success" || status === "already") patch.lastSuccessAt = resultAt;
   if (incognito) {
     if (!siteId) return;
     const settings = await getSettings({ incognito: true });
     const sites = mergeSites({ sites: settings.sites });
+    if (status === "pending" && !sites[siteId].lastSuccessAt && sites[siteId].lastResult === "success") {
+      patch.lastSuccessAt = sites[siteId].lastResultAt || "";
+    }
     sites[siteId] = { ...sites[siteId], ...patch };
     await chrome.storage.local.set({
       [INCOGNITO_SETTINGS_KEY]: {
@@ -1715,6 +1754,9 @@ async function recordSiteResult(siteId, status, message, markToday, incognito = 
   }
   const settings = await getSettings();
   const sites = mergeSites(settings);
+  if (status === "pending" && !sites[siteId].lastSuccessAt && sites[siteId].lastResult === "success") {
+    patch.lastSuccessAt = sites[siteId].lastResultAt || "";
+  }
   sites[siteId] = { ...sites[siteId], ...patch };
   await chrome.storage.local.set({ sites });
 }

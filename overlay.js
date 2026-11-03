@@ -43,6 +43,12 @@
   if (globalThis.bmShowLoginHudInstalled) return;
   globalThis.bmShowLoginHudInstalled = true;
 
+  document.addEventListener("click", (event) => {
+    const hud = document.getElementById(HUD_ID);
+    if (!hud || hud.contains(event.target)) return;
+    hud.remove();
+  }, true);
+
   chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
     if (message?.type !== "showLoginHud") return;
     showLoginHud(message.message);

@@ -163,18 +163,34 @@ function renderLastResult(element, settings) {
     element.textContent = t("noRecord");
     return;
   }
+  const isPending = settings.lastResult === "pending";
+  const previousSuccess = isPending && settings.lastSuccessAt;
   const key = RESULT_KEYS[settings.lastResult];
-  const label = key ? t(key) : settings.lastResult;
-  const time = settings.lastResultAt ? formatClock(settings.lastResultAt) : "";
+  const label = previousSuccess
+    ? t("resultSuccess")
+    : isPending
+      ? t("resultNotSignedToday")
+      : key
+        ? t(key)
+        : settings.lastResult;
+  const time = previousSuccess
+    ? formatClock(settings.lastSuccessAt)
+    : !isPending && settings.lastResultAt
+      ? formatClock(settings.lastResultAt)
+      : "";
   const status = document.createElement("span");
   status.className = "site-result-status";
+  status.classList.toggle("is-error", isPending && !previousSuccess);
   status.textContent = `${label}${time ? `（${time}）` : ""}`;
   element.append(status);
 
-  const detail =
-    settings.lastResult === "login"
-      ? t("popupLoginDetail")
-      : settings.lastMessage || "";
+  const detail = previousSuccess
+    ? t("resultNotSignedToday")
+    : isPending
+      ? ""
+      : settings.lastResult === "login"
+        ? t("popupLoginDetail")
+        : settings.lastMessage || "";
   if (!detail) return;
 
   const separator = document.createElement("span");
@@ -187,7 +203,7 @@ function renderLastResult(element, settings) {
   detailText.textContent = detail;
   detailText.classList.toggle(
     "is-error",
-    ["login", "captcha", "timeout", "error"].includes(settings.lastResult)
+    previousSuccess || ["login", "captcha", "timeout", "error"].includes(settings.lastResult)
   );
   element.append(detailText);
 }
