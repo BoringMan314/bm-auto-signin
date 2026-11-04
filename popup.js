@@ -181,6 +181,7 @@ function renderLastResult(element, settings) {
   const status = document.createElement("span");
   status.className = "site-result-status";
   status.classList.toggle("is-error", isPending && !previousSuccess);
+  status.classList.toggle("is-warning", settings.lastResult === "login");
   status.textContent = `${label}${time ? `（${time}）` : ""}`;
   element.append(status);
 
@@ -203,8 +204,9 @@ function renderLastResult(element, settings) {
   detailText.textContent = detail;
   detailText.classList.toggle(
     "is-error",
-    previousSuccess || ["login", "captcha", "timeout", "error"].includes(settings.lastResult)
+    previousSuccess || ["captcha", "timeout", "error"].includes(settings.lastResult)
   );
+  detailText.classList.toggle("is-warning", settings.lastResult === "login");
   element.append(detailText);
 }
 

@@ -6,6 +6,7 @@
   --muted: #93a4bd;
   --accent: #2ec9a0;
   --accent-dark: #1ea884;
+  --warning: #fbbf24;
   --danger: #f87171;
 }
 
@@ -141,6 +142,11 @@ small {
 
 .site-result-status.is-error {
   color: var(--danger);
+}
+
+.site-result-status.is-warning,
+.site-result-detail.is-warning {
+  color: var(--warning);
 }
 
 .site-result-detail.is-error {
