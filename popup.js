@@ -159,33 +159,46 @@ function formatNextAlarm(timestamp, enabled) {
 
 function renderLastResult(element, settings) {
   element.replaceChildren();
+  element.classList.remove("is-error");
   if (!settings?.lastResult) {
     element.textContent = t("noRecord");
+    element.classList.add("is-error");
     return;
   }
   const isPending = settings.lastResult === "pending";
   const previousSuccess = isPending && settings.lastSuccessAt;
+  const dueButUnsigned =
+    settings.lastResult === "success" &&
+    settings.lastSignDate !== todayKey() &&
+    isPastSignTime();
+  const showUnsignedAfterSuccess = Boolean(previousSuccess || dueButUnsigned);
   const key = RESULT_KEYS[settings.lastResult];
-  const label = previousSuccess
+  const label = showUnsignedAfterSuccess
     ? t("resultSuccess")
     : isPending
       ? t("resultNotSignedToday")
       : key
         ? t(key)
         : settings.lastResult;
-  const time = previousSuccess
-    ? formatClock(settings.lastSuccessAt)
+  const time = showUnsignedAfterSuccess
+    ? formatClock(previousSuccess ? settings.lastSuccessAt : settings.lastResultAt)
     : !isPending && settings.lastResultAt
       ? formatClock(settings.lastResultAt)
       : "";
   const status = document.createElement("span");
   status.className = "site-result-status";
-  status.classList.toggle("is-error", isPending && !previousSuccess);
-  status.classList.toggle("is-warning", settings.lastResult === "login");
+  status.classList.toggle(
+    "is-error",
+    (isPending && !previousSuccess) || ["captcha", "timeout", "error"].includes(settings.lastResult)
+  );
+  status.classList.toggle(
+    "is-warning",
+    settings.lastResult === "login" || showUnsignedAfterSuccess
+  );
   status.textContent = `${label}${time ? `（${time}）` : ""}`;
   element.append(status);
 
-  const detail = previousSuccess
+  const detail = showUnsignedAfterSuccess
     ? t("resultNotSignedToday")
     : isPending
       ? ""
@@ -204,7 +217,7 @@ function renderLastResult(element, settings) {
   detailText.textContent = detail;
   detailText.classList.toggle(
     "is-error",
-    previousSuccess || ["captcha", "timeout", "error"].includes(settings.lastResult)
+    showUnsignedAfterSuccess || ["captcha", "timeout", "error"].includes(settings.lastResult)
   );
   detailText.classList.toggle("is-warning", settings.lastResult === "login");
   element.append(detailText);
@@ -214,6 +227,17 @@ function formatClock(iso) {
   const date = new Date(iso);
   if (Number.isNaN(date.getTime())) return "";
   return `${date.getMonth() + 1}/${date.getDate()} ${pad(date.getHours())}:${pad(date.getMinutes())}`;
+}
+
+function todayKey() {
+  const now = new Date();
+  return `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`;
+}
+
+function isPastSignTime() {
+  const [hour, minute] = (signTimeEl.value || "00:01").split(":").map(Number);
+  const now = new Date();
+  return now.getHours() * 60 + now.getMinutes() >= hour * 60 + minute;
 }
 
 function pad(value) {

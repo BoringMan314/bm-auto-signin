@@ -14,7 +14,7 @@
   "nextSignLabel": { "message": "下次簽到" },
   "lastResultLabel": { "message": "上次結果" },
   "computing": { "message": "計算中…" },
-  "noRecord": { "message": "尚無紀錄" },
+  "noRecord": { "message": "尚無紀錄。" },
   "hint": { "message": "請先在 Chrome 登入各網站。排定時間請保持瀏覽器開啟；若當日較晚才開機或開啟 Chrome，也會自動補簽尚未完成的網站。" },
   "pageLoginHint": { "message": "請手動登入" },
   "popupLoginDetail": { "message": "請先手動登入。" },
@@ -77,8 +77,8 @@
   "msgLogin": { "message": "尚未登入 APK.TW。" },
   "msgFailed": { "message": "簽到失敗。" },
   "msgApkTw502": { "message": "APK.TW 暫時回傳 Cloudflare 502，已關閉分頁並排入重試。" },
-  "msgTimeoutKept": { "message": "等待簽到逾時，已保留分頁。" },
-  "msgCaptchaKept": { "message": "需要驗證碼，已保留分頁。" },
+  "msgTimeoutKept": { "message": "已保留分頁。" },
+  "msgCaptchaKept": { "message": "已保留分頁。" },
   "msgOpenTabFailed": {
     "message": "無法開啟分頁：$ERROR$",
     "placeholders": { "error": { "content": "$1" } }
