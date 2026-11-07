@@ -37,7 +37,7 @@ assert.equal(click().status, 'login');
 login = false; context.location.href = 'https://littleskin.cn/auth/login';
 assert.equal(inspect().status, 'login');
 logout = true; button.textContent = '簽到';
-captcha = { textContent: '', getClientRects: () => [1], querySelector: s => s === '.geetest_panel_box' ? { className: 'geetest_panelshowslide' } : null };
+captcha = { textContent: '', getClientRects: () => [1], querySelector: s => s === '.geetest_panel_box' ? { className: 'geetest_panelshowslide', getClientRects: () => [1] } : null };
 assert.equal(click().status, 'captcha');
 assert.equal(clicks, 1, 'Do not click through a CAPTCHA or completed sign-in');
 console.log('LittleSkin login, loading, cooldown, and guarded click checks passed.');

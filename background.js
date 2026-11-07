@@ -88,6 +88,7 @@ const DEFAULT_SETTINGS = {
 };
 
 const signingLocks = new Set();
+let siteResultWriteQueue = Promise.resolve();
 
 function timeoutAlarmName(incognito) {
   return incognito ? `${TIMEOUT_ALARM}-incognito` : TIMEOUT_ALARM;
@@ -1613,6 +1614,8 @@ async function onSignResult(payload, tabId) {
     await detachCurrentTab(state);
     if (siteId === "eyny") {
       await navigateEynyToLogin(tabId);
+    } else if (siteId === "klpbbs") {
+      await navigateKlpbbsToLogin(tabId);
     }
     await showLoginHudOnTab(tabId);
   } else if (status === "timeout") {
@@ -1664,6 +1667,21 @@ async function navigateEynyToLogin(tabId) {
   try {
     const tab = await chrome.tabs.get(tabId);
     const origin = new URL(tab.url || SITES.eyny.url).origin;
+    await navigateTabToUrl(tabId, `${origin}/member.php?mod=logging&action=login`);
+  } catch (_) {
+  }
+}
+
+async function navigateKlpbbsToLogin(tabId) {
+  await navigateTabToUrl(
+    tabId,
+    "https://klpbbs.com/member.php?mod=logging&action=login"
+  );
+}
+
+async function navigateTabToUrl(tabId, url) {
+  if (!tabId) return;
+  try {
     const loaded = new Promise((resolve) => {
       const onUpdated = (updatedTabId, info) => {
         if (updatedTabId !== tabId || info.status !== "complete") return;
@@ -1677,10 +1695,7 @@ async function navigateEynyToLogin(tabId) {
       }, 15000);
       chrome.tabs.onUpdated.addListener(onUpdated);
     });
-    await chrome.tabs.update(tabId, {
-      active: true,
-      url: `${origin}/member.php?mod=logging&action=login`
-    });
+    await chrome.tabs.update(tabId, { active: true, url });
     await loaded;
   } catch (_) {
   }
@@ -1723,7 +1738,15 @@ async function tabExists(tabId) {
   }
 }
 
-async function recordSiteResult(siteId, status, message, markToday, incognito = false) {
+function recordSiteResult(siteId, status, message, markToday, incognito = false) {
+  const write = siteResultWriteQueue.then(() =>
+    writeSiteResult(siteId, status, message, markToday, incognito)
+  );
+  siteResultWriteQueue = write.catch(() => {});
+  return write;
+}
+
+async function writeSiteResult(siteId, status, message, markToday, incognito = false) {
   const resultAt = new Date().toISOString();
   const patch = {
     lastResult: status,
@@ -1736,6 +1759,7 @@ async function recordSiteResult(siteId, status, message, markToday, incognito = 
     if (!siteId) return;
     const settings = await getSettings({ incognito: true });
     const sites = mergeSites({ sites: settings.sites });
+    if (status === "pending" && isLoginResultToday(sites[siteId])) return;
     if (status === "pending" && !sites[siteId].lastSuccessAt && sites[siteId].lastResult === "success") {
       patch.lastSuccessAt = sites[siteId].lastResultAt || "";
     }
@@ -1754,11 +1778,18 @@ async function recordSiteResult(siteId, status, message, markToday, incognito = 
   }
   const settings = await getSettings();
   const sites = mergeSites(settings);
+  if (status === "pending" && isLoginResultToday(sites[siteId])) return;
   if (status === "pending" && !sites[siteId].lastSuccessAt && sites[siteId].lastResult === "success") {
     patch.lastSuccessAt = sites[siteId].lastResultAt || "";
   }
   sites[siteId] = { ...sites[siteId], ...patch };
   await chrome.storage.local.set({ sites });
+}
+
+function isLoginResultToday(site) {
+  if (site?.lastResult !== "login" || !site.lastResultAt) return false;
+  const date = new Date(site.lastResultAt);
+  return !Number.isNaN(date.getTime()) && todayKey(date) === todayKey();
 }
 
 async function applyQueueBadge() {

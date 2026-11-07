@@ -38,7 +38,7 @@
   "msgKlpbbsNoButton": { "message": "KLPBBS check-in button was not found. Check that the page loaded correctly." },
   "msgKlpbbsDrawFailed": { "message": "Check-in succeeded, but the random-thread page could not be confirmed. The tab was kept open." },
   "msgLittleSkinNoButton": { "message": "LittleSkin check-in button was not found. Check that the page loaded correctly." },
-  "msgLittleSkinCaptcha": { "message": "Check-in was clicked. Waiting for manual verification; the tab was kept open." },
+  "msgLittleSkinCaptcha": { "message": "Waiting for manual verification." },
   "signNow": { "message": "Check in now" },
   "signMakeup": { "message": "Catch up" },
   "save": { "message": "Save settings" },

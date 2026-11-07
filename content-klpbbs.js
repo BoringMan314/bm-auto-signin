@@ -111,7 +111,6 @@
   }
 
   async function report(status, message, extra = {}) {
-    if (status === "login") globalThis.bmShowLoginHud?.();
     if (status === "success" || status === "already") await delay(CLOSE_PREVIEW_MS);
     return chrome.runtime.sendMessage({
       type: "signResult",

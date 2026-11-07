@@ -118,5 +118,19 @@ const settle = () => run('badgeUpdateQueue');
   assert.equal(local.sites.klpbbs.lastResult, 'success');
   assert.equal(badges.get(202), '!');
   assert.equal((await run('loginFailureFlags()')).normal, false);
+
+  const siteIds = ['baha', 'apktw', 'eyny', 'genshin', 'klpbbs', 'littleskin'];
+  const loginSites = () => Object.fromEntries(siteIds.map(id => [id, {
+    enabled: true,
+    lastResult: 'login',
+    lastResultAt: new Date().toISOString(),
+    lastMessage: 'login'
+  }]));
+  local.sites = loginSites();
+  await Promise.all(siteIds.map(id => run(`recordSiteResult("${id}","pending","",false,false)`)));
+  for (const id of siteIds) assert.equal(local.sites[id].lastResult, 'login', `${id} keeps today's confirmed login state`);
+  local.incognitoSettings = { signTime: '00:01', sites: loginSites() };
+  await Promise.all(siteIds.map(id => run(`recordSiteResult("${id}","pending","",false,true)`)));
+  for (const id of siteIds) assert.equal(local.incognitoSettings.sites[id].lastResult, 'login', `${id} keeps incognito login state`);
   console.log('Badge and attention regression checks passed.');
 })().catch(error => { console.error(error); process.exitCode = 1; });

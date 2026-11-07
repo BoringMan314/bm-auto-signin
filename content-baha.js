@@ -140,9 +140,6 @@
   }
 
   async function report(status, message) {
-    if (status === "login") {
-      globalThis.bmShowLoginHud?.();
-    }
     if (status === "success" || status === "already") {
       await delay(CLOSE_PREVIEW_MS);
     }
